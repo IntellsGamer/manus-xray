@@ -1,4 +1,4 @@
-import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -63,6 +63,8 @@ export const gatewayClients = mysqlTable("gateway_clients", {
   socksUsername: varchar("socksUsername", { length: 64 }).notNull().unique(),
   socksPassword: varchar("socksPassword", { length: 64 }).notNull(),
   subscriptionToken: varchar("subscriptionToken", { length: 96 }).notNull().unique(),
+  trafficLimitBytes: bigint("trafficLimitBytes", { mode: "number" }).notNull().default(0),
+  dayLimit: int("dayLimit").notNull().default(0),
   expiresAt: timestamp("expiresAt"),
   lastSubscriptionAt: timestamp("lastSubscriptionAt"),
   subscriptionDeliveryCount: int("subscriptionDeliveryCount").notNull().default(0),

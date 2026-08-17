@@ -30,4 +30,10 @@ describe("vless administration router", () => {
     const caller = appRouter.createCaller(contextWithRole("user"));
     await expect(caller.vless.get()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  it("protects client deletion and quota policy mutations from non-owner callers", async () => {
+    const caller = appRouter.createCaller(contextWithRole("user"));
+    await expect(caller.vless.deleteClient({ id: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.vless.updateClientPolicy({ id: 1, trafficLimitBytes: 10 * 1024 * 1024, dayLimit: 30 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });

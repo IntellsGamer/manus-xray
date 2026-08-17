@@ -53,3 +53,12 @@
 - [x] Make both unified sidebar controls anchor-addressable and verify the rendered `#gateway-overview` and `#client-management` destinations.
 - [x] Remove real-name placeholders from the project interface and replace them with neutral labels.
 - [x] Verify no visible project placeholder reuses the user’s real name before checkpointing.
+- [x] Replace client revocation with permanent client deletion that removes its credentials, token, delivery records, and management row.
+- [x] Add persistent per-client storage limits with MB/GB unit selection and optional day limits.
+- [x] Show quota and validity state in client management without fabricating traffic consumption.
+- [x] Refine the Clients & routes section into a denser, XUI-inspired operational management panel.
+- [x] Test permanent deletion authorization, quota-policy request validation, TypeScript, unit coverage, production build, and client-management UI flows before checkpointing.
+- [x] Restore Clients & routes as a dedicated client-side `/admin/clients` page under the shared admin shell.
+- [x] Preserve instant React navigation and correct active sidebar state between `/admin` and `/admin/clients`.
+- [x] Add behavior-level tests for permanent client deletion and quota/day-limit policy persistence without touching live gateway records.
+- [x] Add regression coverage for invalid client-policy inputs and dedicated SPA route navigation.

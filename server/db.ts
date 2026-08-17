@@ -254,11 +254,12 @@ export async function getGatewayClientBySubscriptionToken(subscriptionToken: str
   return result[0];
 }
 
-export async function createGatewayClient(name: string): Promise<GatewayClient> {
+export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number }): Promise<GatewayClient> {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
+  const dayLimit = input.dayLimit ?? 0;
   const result = await db.insert(gatewayClients).values({
-    name: name.trim(),
+    name: input.name.trim(),
     enabled: true,
     vlessUuid: createVlessUuid(),
     vmessUuid: createVlessUuid(),
@@ -266,6 +267,9 @@ export async function createGatewayClient(name: string): Promise<GatewayClient> 
     socksUsername: clientSocksUsername(),
     socksPassword: createGatewayCredential(),
     subscriptionToken: createSubscriptionToken(),
+    trafficLimitBytes: input.trafficLimitBytes ?? 0,
+    dayLimit,
+    expiresAt: dayLimit > 0 ? new Date(Date.now() + dayLimit * 86_400_000) : null,
   });
   const created = await getGatewayClientById(Number(result[0].insertId));
   if (!created) throw new Error("Failed to create gateway client");
@@ -308,6 +312,26 @@ export async function revokeGatewayClient(id: number) {
     socksUsername: clientSocksUsername(),
     socksPassword: createGatewayCredential(),
     subscriptionToken: createSubscriptionToken(),
+  }).where(eq(gatewayClients.id, id));
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found");
+  return client;
+}
+
+export async function deleteGatewayClient(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.delete(subscriptionEvents).where(eq(subscriptionEvents.clientId, id));
+  await db.delete(gatewayClients).where(eq(gatewayClients.id, id));
+}
+
+export async function updateGatewayClientPolicy(id: number, input: { trafficLimitBytes: number; dayLimit: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayClients).set({
+    trafficLimitBytes: input.trafficLimitBytes,
+    dayLimit: input.dayLimit,
+    expiresAt: input.dayLimit > 0 ? new Date(Date.now() + input.dayLimit * 86_400_000) : null,
   }).where(eq(gatewayClients.id, id));
   const client = await getGatewayClientById(id);
   if (!client) throw new Error("Gateway client was not found");

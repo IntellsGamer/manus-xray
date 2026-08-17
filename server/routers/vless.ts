@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   createGatewayClient,
+  deleteGatewayClient,
   ensureVlessProfile,
   listGatewayClients,
   listSubscriptionEventsForClient,
@@ -11,6 +12,7 @@ import {
   rotateGatewayClientCredentials,
   setGatewayClientEnabled,
   updateGatewayPathsAndGlobalProfile,
+  updateGatewayClientPolicy,
   updateVlessProfile,
 } from "../db";
 import { adminProcedure, router } from "../_core/trpc";
@@ -69,6 +71,8 @@ function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, 
     name: client.name,
     enabled: client.enabled,
     expiresAt: client.expiresAt,
+    trafficLimitBytes: Number(client.trafficLimitBytes),
+    dayLimit: client.dayLimit,
     subscriptionPath: `/sub/${client.subscriptionToken}`,
     subscriptionDeliveryCount: client.subscriptionDeliveryCount,
     lastSubscriptionAt: client.lastSubscriptionAt,
@@ -121,9 +125,9 @@ export const vlessRouter = router({
       recentDeliveries: await listSubscriptionEventsForClient(client.id),
     })));
   }),
-  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120) })).mutation(async ({ ctx, input }) => {
+  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0), dayLimit: z.number().int().min(0).max(3650).default(0) })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
-    const client = await createGatewayClient(input.name);
+    const client = await createGatewayClient(input);
     await applyXrayProfile(profile);
     return presentClient(profile, client);
   }),
@@ -142,6 +146,18 @@ export const vlessRouter = router({
   revokeClient: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await revokeGatewayClient(input.id);
+    await applyXrayProfile(profile);
+    return presentClient(profile, client);
+  }),
+  deleteClient: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const profile = await profileForRequest(ctx.req.headers);
+    await deleteGatewayClient(input.id);
+    await applyXrayProfile(profile);
+    return { success: true } as const;
+  }),
+  updateClientPolicy: adminProcedure.input(z.object({ id: z.number().int().positive(), trafficLimitBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), dayLimit: z.number().int().min(0).max(3650) })).mutation(async ({ ctx, input }) => {
+    const profile = await profileForRequest(ctx.req.headers);
+    const client = await updateGatewayClientPolicy(input.id, input);
     await applyXrayProfile(profile);
     return presentClient(profile, client);
   }),
