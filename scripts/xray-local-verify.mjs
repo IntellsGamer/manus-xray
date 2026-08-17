@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { resolve } from "node:path";
-import { buildXrayConfig } from "../server/vless.ts";
+import { buildSocksClientConfig, buildXrayConfig } from "../server/vless.ts";
 import { registerVlessUpgradeProxy } from "../server/vlessUpgradeProxy.ts";
 
 const xrayBinary = process.env.XRAY_BINARY_PATH || "/home/ubuntu/xray-validation/xray/xray";
@@ -11,6 +11,9 @@ const workDir = resolve("/tmp/nginx-vless-xray-check");
 const uuid = "51dc1a8e-0667-4ed5-aa36-15c8c5a85125";
 const serverPort = 18080;
 const socksPort = 18181;
+const vmessSocksPort = 18184;
+const directVmessSocksPort = 18185;
+const remoteSocksPort = 18186;
 const bridgePort = 18182;
 const profile = {
   id: 1,
@@ -53,7 +56,7 @@ function waitForPort(port) {
   });
 }
 
-function assertWebSocketHandshake(port) {
+function assertWebSocketHandshake(port, path = "/vless") {
   return new Promise((resolveHandshake, rejectHandshake) => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
     let response = "";
@@ -62,7 +65,7 @@ function assertWebSocketHandshake(port) {
       rejectHandshake(new Error("Timed out waiting for WebSocket upgrade response"));
     }, 5000);
     socket.on("connect", () => {
-      socket.write("GET /vless HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n");
+      socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`);
     });
     socket.on("data", chunk => {
       response += chunk.toString("utf8");
@@ -100,8 +103,9 @@ function runCommand(command, args) {
 }
 
 function startXray(configPath, logPath) {
-  const child = spawn(xrayBinary, ["run", "-c", configPath], { stdio: ["ignore", "ignore", "pipe"] });
+  const child = spawn(xrayBinary, ["run", "-c", configPath], { stdio: ["ignore", "pipe", "pipe"] });
   const errors = [];
+  child.stdout.on("data", () => {});
   child.stderr.on("data", data => errors.push(data.toString()));
   child.once("exit", code => {
     if (code !== 0 && code !== null) console.error(`Xray exited (${code}): ${errors.join("")}`);
@@ -129,6 +133,9 @@ async function main() {
   await mkdir(workDir, { recursive: true });
   const serverConfigPath = resolve(workDir, "server.json");
   const clientConfigPath = resolve(workDir, "client.json");
+  const vmessClientConfigPath = resolve(workDir, "vmess-socks-client.json");
+  const directVmessClientConfigPath = resolve(workDir, "direct-vmess-client.json");
+  const remoteSocksClientConfigPath = resolve(workDir, "remote-socks-client.json");
 
   await writeFile(serverConfigPath, `${JSON.stringify(buildXrayConfig(profile, serverPort), null, 2)}\n`);
   await writeFile(clientConfigPath, `${JSON.stringify({
@@ -145,12 +152,44 @@ async function main() {
       streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vless" } },
     }],
   }, null, 2)}\n`);
+  const remoteSocksConfig = JSON.parse(buildSocksClientConfig(profile));
+  remoteSocksConfig.inbounds[0].port = remoteSocksPort;
+  remoteSocksConfig.outbounds[0].settings.servers[0].address = "127.0.0.1";
+  remoteSocksConfig.outbounds[0].settings.servers[0].port = bridgePort;
+  remoteSocksConfig.outbounds[0].streamSettings.security = "none";
+  delete remoteSocksConfig.outbounds[0].streamSettings.tlsSettings;
+  delete remoteSocksConfig.outbounds[0].streamSettings.wsSettings.headers;
+  await writeFile(remoteSocksClientConfigPath, `${JSON.stringify(remoteSocksConfig, null, 2)}\n`);
+  const vmessSocksConfig = {
+    log: { loglevel: "warning" },
+    inbounds: [{ listen: "127.0.0.1", port: vmessSocksPort, protocol: "socks", settings: { auth: "noauth", udp: true } }],
+    outbounds: [{
+      protocol: "vmess",
+      settings: { address: "127.0.0.1", port: bridgePort, id: profile.vmessUuid, security: "none", level: 0 },
+      streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vmess" } },
+    }],
+  };
+  await writeFile(vmessClientConfigPath, `${JSON.stringify(vmessSocksConfig, null, 2)}\n`);
+  const directVmessConfig = structuredClone(vmessSocksConfig);
+  directVmessConfig.inbounds[0].port = directVmessSocksPort;
+  directVmessConfig.outbounds[0].settings.address = "127.0.0.1";
+  directVmessConfig.outbounds[0].settings.port = serverPort + 1;
+  directVmessConfig.outbounds[0].streamSettings.security = "none";
+  delete directVmessConfig.outbounds[0].streamSettings.tlsSettings;
+  delete directVmessConfig.outbounds[0].streamSettings.wsSettings.headers;
+  await writeFile(directVmessClientConfigPath, `${JSON.stringify(directVmessConfig, null, 2)}\n`);
 
   xrayTest(serverConfigPath);
   xrayTest(clientConfigPath);
+  xrayTest(vmessClientConfigPath);
+  xrayTest(directVmessClientConfigPath);
+  xrayTest(remoteSocksClientConfigPath);
 
   let server;
   let client;
+  let vmessClient;
+  let directVmessClient;
+  let remoteSocksClient;
   let bridge;
   try {
     server = startXray(serverConfigPath, resolve(workDir, "server.log"));
@@ -169,15 +208,37 @@ async function main() {
       bridge.listen(bridgePort, "127.0.0.1", resolveListen);
     });
     await assertWebSocketHandshake(bridgePort);
+    await assertWebSocketHandshake(bridgePort, "/vmess");
     client = startXray(clientConfigPath, resolve(workDir, "client.log"));
     await waitForPort(socksPort);
+    vmessClient = startXray(vmessClientConfigPath, resolve(workDir, "vmess-client.log"));
+    await waitForPort(vmessSocksPort);
+    directVmessClient = startXray(directVmessClientConfigPath, resolve(workDir, "direct-vmess-client.log"));
+    await waitForPort(directVmessSocksPort);
+    remoteSocksClient = startXray(remoteSocksClientConfigPath, resolve(workDir, "remote-socks-client.log"));
+    await waitForPort(remoteSocksPort);
 
     const request = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${socksPort}`, "https://example.com/"]);
     if (request.code !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
     if (!request.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VLESS transport");
 
-    console.log("Xray config validation and application WebSocket-to-VLESS loopback request passed.");
+    const directVmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${directVmessSocksPort}`, "https://example.com/"]);
+    if (directVmessRequest.code !== 0) throw new Error(`Direct VMess transport request failed: ${directVmessRequest.stderr}`);
+    if (!directVmessRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through direct VMess transport");
+
+    const vmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${vmessSocksPort}`, "https://example.com/"]);
+    if (vmessRequest.code !== 0) throw new Error(`VMess SOCKS5 transport request failed: ${vmessRequest.stderr}`);
+    if (!vmessRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VMess SOCKS5 transport");
+
+    const remoteSocksRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${remoteSocksPort}`, "https://example.com/"]);
+    if (remoteSocksRequest.code !== 0) throw new Error(`Remote SOCKS5 transport request failed: ${remoteSocksRequest.stderr}`);
+    if (!remoteSocksRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through remote SOCKS5 transport");
+
+    console.log("Xray config validation plus VLESS, VMess, and remote SOCKS5 WebSocket bridge requests passed.");
   } finally {
+    await stop(remoteSocksClient);
+    await stop(vmessClient);
+    await stop(directVmessClient);
     await stop(client);
     await stop(server);
     await new Promise(resolveClose => bridge?.close(() => resolveClose()));

@@ -65,6 +65,7 @@ describe("VLESS profile serialization", () => {
     expect(vmess.path).toBe("/vmess");
     expect(trojan.protocol).toBe("trojan:");
     expect(trojan.searchParams.get("path")).toBe("/trojan");
+    expect(socks.outbounds[0].protocol).toBe("socks");
     expect(socks.outbounds[0].settings.servers[0].users[0]).toEqual({ user: "gateway", pass: "test-socks-password" });
     expect(socks.outbounds[0].streamSettings.wsSettings.path).toBe("/socks");
   });

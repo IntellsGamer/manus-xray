@@ -56,7 +56,7 @@ const protocolMeta: Record<ProtocolKey, { label: string; title: string; accent: 
   vless: { label: "VLESS", title: "VLESS / WebSocket", accent: "cyan", detail: "UUID credentials over a WebSocket transport." },
   vmess: { label: "VMess", title: "VMess / WebSocket", accent: "violet", detail: "QR-ready VMess profile with a dedicated UUID." },
   trojan: { label: "Trojan", title: "Trojan / WebSocket", accent: "amber", detail: "Password-authenticated transport with a separate path." },
-  socks: { label: "SOCKS5", title: "SOCKS5 / WebSocket", accent: "emerald", detail: "Xray client JSON for SOCKS5 over the gateway." },
+  socks: { label: "SOCKS5", title: "SOCKS5 remote endpoint", accent: "emerald", detail: "Authenticated remote SOCKS5 over its dedicated WebSocket path." },
 };
 
 function copyValue(value: string, label: string) {
@@ -91,6 +91,25 @@ function QrImportDialog({ payload, onOpenChange }: { payload: QrPayload; onOpenC
 }
 
 function CodePane({ label, value, qrDescription, onQr, compact = false }: { label: string; value: string; qrDescription: string; onQr: () => void; compact?: boolean }) {
+  let remoteSocksDetails: { endpoint: string; username: string; password: string; path: string } | null = null;
+  if (label === "Xray client JSON") {
+    try {
+      const config = JSON.parse(value);
+      const server = config.outbounds?.[0]?.settings?.servers?.[0];
+      const path = config.outbounds?.[0]?.streamSettings?.wsSettings?.path;
+      if (server?.address && server?.port && server?.users?.[0]?.user && server?.users?.[0]?.pass && path) {
+        remoteSocksDetails = {
+          endpoint: `${server.address}:${server.port}`,
+          username: server.users[0].user,
+          password: server.users[0].pass,
+          path,
+        };
+      }
+    } catch {
+      remoteSocksDetails = null;
+    }
+  }
+
   return (
     <div className="protocol-code-pane">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -101,6 +120,9 @@ function CodePane({ label, value, qrDescription, onQr, compact = false }: { labe
         </div>
       </div>
       <code className={compact ? "line-clamp-2 block break-all font-mono text-[11px] leading-5" : "block max-h-28 overflow-auto break-all font-mono text-[11px] leading-5"}>{value}</code>
+      {remoteSocksDetails && <div className="mt-3 grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
+        {([['Remote endpoint', remoteSocksDetails.endpoint], ['Username', remoteSocksDetails.username], ['Password', remoteSocksDetails.password], ['WebSocket path', remoteSocksDetails.path]] as const).map(([detailLabel, detailValue]) => <button type="button" key={detailLabel} onClick={() => copyValue(detailValue, detailLabel)} className="rounded-md bg-background/60 px-2 py-1.5 text-left transition-colors hover:bg-accent"><span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{detailLabel}</span><code className="block truncate text-[11px] text-foreground">{detailValue}</code></button>)}
+      </div>}
     </div>
   );
 }

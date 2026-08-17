@@ -46,13 +46,17 @@ export function buildVmessUri(profile: VlessProfile) {
     port: String(profile.port),
     id: profile.vmessUuid,
     aid: "0",
-    scy: "auto",
+    scy: "none",
+    security: "none",
     net: "ws",
     type: "none",
     host: profile.serverAddress,
     path: normaliseWsPath(profile.vmessWsPath),
     tls: profile.tlsEnabled ? "tls" : "",
     sni: profile.serverAddress,
+    alpn: "",
+    fp: "",
+    insecure: "0",
   };
   return `vmess://${Buffer.from(JSON.stringify(config), "utf8").toString("base64")}`;
 }
@@ -67,8 +71,15 @@ export function buildTrojanUri(profile: VlessProfile) {
 export function buildSocksClientConfig(profile: VlessProfile) {
   return JSON.stringify({
     log: { loglevel: "warning" },
-    inbounds: [{ listen: "127.0.0.1", port: 10808, protocol: "socks", settings: { auth: "noauth", udp: true } }],
+    inbounds: [{
+      listen: "127.0.0.1",
+      port: 10808,
+      protocol: "socks",
+      settings: { auth: "noauth", udp: true, ip: "127.0.0.1" },
+      sniffing: { enabled: true, destOverride: ["http", "tls"] },
+    }],
     outbounds: [{
+      tag: "proxy",
       protocol: "socks",
       settings: {
         servers: [{
@@ -80,10 +91,12 @@ export function buildSocksClientConfig(profile: VlessProfile) {
       streamSettings: {
         network: "ws",
         security: profile.tlsEnabled ? "tls" : "none",
-        tlsSettings: profile.tlsEnabled ? { serverName: profile.serverAddress } : undefined,
+        tlsSettings: profile.tlsEnabled ? { serverName: profile.serverAddress, allowInsecure: false } : undefined,
         wsSettings: { path: normaliseWsPath(profile.socksWsPath), headers: { Host: profile.serverAddress } },
       },
-    }],
+      mux: { enabled: false },
+    }, { protocol: "freedom", tag: "direct" }],
+    routing: { rules: [{ type: "field", ip: ["geoip:private"], outboundTag: "direct" }] },
   }, null, 2);
 }
 
@@ -133,7 +146,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number) {
         listen: "127.0.0.1",
         port: internalPort + 1,
         protocol: "vmess",
-        settings: { clients: [{ id: profile.vmessUuid, alterId: 0 }] },
+        settings: { clients: [{ id: profile.vmessUuid, level: 0 }] },
         streamSettings: streamSettings(profile.vmessWsPath),
       },
       {
