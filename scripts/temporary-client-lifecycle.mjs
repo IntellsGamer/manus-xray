@@ -1,6 +1,7 @@
 import { ENV } from "../server/_core/env.ts";
-import { getUserByOpenId } from "../server/db.ts";
+import { getGatewayClientById, getUserByOpenId, getVlessProfile, recordGatewayClientTrafficUsage } from "../server/db.ts";
 import { vlessRouter } from "../server/routers/vless.ts";
+import { enforceGatewayTrafficQuotas } from "../server/xrayRuntime.ts";
 
 const host = "nginxadmin-kw4zek2d.manus.space";
 const testName = `Temporary 1 MB validation ${Date.now()}`;
@@ -32,6 +33,27 @@ async function main() {
     if (!proxyResponse.ok) throw new Error(`Temporary subscription returned HTTP ${proxyResponse.status}`);
     const payload = Buffer.from(await proxyResponse.text(), "base64").toString("utf8");
     if (!payload.includes(created.connection.vlessUri)) throw new Error("Temporary subscription payload did not contain the generated VLESS import");
+
+    const storedBeforeUsage = await getGatewayClientById(temporaryId);
+    if (!storedBeforeUsage) throw new Error("The temporary client could not be loaded for counter validation");
+    await Promise.all([
+      recordGatewayClientTrafficUsage(storedBeforeUsage, 1024 * 1024),
+      recordGatewayClientTrafficUsage(storedBeforeUsage, 1024 * 1024),
+    ]);
+    const storedAfterUsage = await getGatewayClientById(temporaryId);
+    if (!storedAfterUsage || storedAfterUsage.trafficUsedBytes !== 1024 * 1024) throw new Error("Duplicate concurrent counter samples were not persisted as one 1 MB interval");
+
+    const profile = await getVlessProfile();
+    if (!profile) throw new Error("Gateway profile is unavailable for quota enforcement validation");
+    const enforcement = await enforceGatewayTrafficQuotas(profile, {
+      listClients: async () => [storedAfterUsage],
+      syncUsage: async () => new Map([[temporaryId, 1024 * 1024]]),
+    });
+    if (!enforcement.disabledClientIds.includes(temporaryId)) throw new Error("Quota-hit temporary client was not disabled");
+    const disabled = await getGatewayClientById(temporaryId);
+    if (!disabled || disabled.enabled || !disabled.quotaExhaustedAt) throw new Error("Quota-hit state was not persisted on the temporary client");
+    const disabledSubscription = await fetch(`http://127.0.0.1:3000${created.subscriptionPath}`, { headers: { accept: "text/plain", "user-agent": "temporary-lifecycle-validator" } });
+    if (disabledSubscription.status !== 404) throw new Error(`Quota-exhausted subscription returned HTTP ${disabledSubscription.status} instead of 404`);
   } finally {
     if (temporaryId) await caller.deleteClient({ id: temporaryId });
   }
@@ -40,7 +62,7 @@ async function main() {
   if (after.some(client => client.id === temporaryId) || existingIds.size !== after.length || after.some(client => !existingIds.has(client.id))) {
     throw new Error("Temporary client cleanup did not preserve the original client set");
   }
-  console.log("Real temporary 1 MB client creation, subscription validation, permanent deletion, and existing-client preservation passed.");
+  console.log("Real temporary 1 MB client creation, atomic counter validation, quota disablement, subscription rejection, permanent deletion, and existing-client preservation passed.");
   process.exit(0);
 }
 

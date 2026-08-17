@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { GatewayClient, InsertUser, gatewayClients, subscriptionEvents, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -345,14 +345,14 @@ export async function recordGatewayClientTrafficUsage(client: GatewayClient, rep
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   const reported = Math.max(0, Math.min(Math.floor(reportedBytes), Number.MAX_SAFE_INTEGER));
-  const previousSnapshot = Math.max(0, client.trafficStatsSnapshotBytes);
-  const delta = reported >= previousSnapshot ? reported - previousSnapshot : reported;
-  const trafficUsedBytes = Math.min(client.trafficUsedBytes + delta, Number.MAX_SAFE_INTEGER);
+  const delta = sql`CASE WHEN ${reported} >= ${gatewayClients.trafficStatsSnapshotBytes} THEN ${reported} - ${gatewayClients.trafficStatsSnapshotBytes} ELSE ${reported} END`;
   await db.update(gatewayClients).set({
-    trafficUsedBytes,
+    trafficUsedBytes: sql`LEAST(${gatewayClients.trafficUsedBytes} + (${delta}), ${Number.MAX_SAFE_INTEGER})`,
     trafficStatsSnapshotBytes: reported,
   }).where(eq(gatewayClients.id, client.id));
-  return trafficUsedBytes;
+  const updated = await getGatewayClientById(client.id);
+  if (!updated) throw new Error("Gateway client was not found");
+  return updated.trafficUsedBytes;
 }
 
 export async function disableGatewayClientForQuota(id: number) {

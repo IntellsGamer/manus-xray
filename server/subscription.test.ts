@@ -100,5 +100,8 @@ describe("subscription route", () => {
     const html = await response.text();
     expect(html).toContain(namedClient.vlessUuid);
     expect(html).toContain("8 MB left");
+    expect(html).not.toContain("Gateway endpoint");
+    expect(html).not.toContain("Subscription deliveries");
+    expect(html).not.toContain("Last observed subscription delivery");
   });
 });

@@ -7,6 +7,7 @@ import net from "net";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { disableGatewayClientForQuota, listGatewayClients, recordGatewayClientTrafficUsage } from "./db";
 import { buildXrayConfig, clientTrafficEmail } from "./vless";
+import { closeActiveGatewayTunnels } from "./gatewayTunnels";
 
 let runningProcess: ChildProcess | undefined;
 let runningConfigHash: string | undefined;
@@ -83,6 +84,7 @@ type QuotaEnforcementDependencies = {
   syncUsage?: (clients: GatewayClient[]) => Promise<Map<number, number> | null>;
   disableClient?: (id: number) => Promise<GatewayClient>;
   applyProfile?: (profile: VlessProfile) => Promise<unknown>;
+  closeTunnels?: () => number;
 };
 
 export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrides: QuotaEnforcementDependencies = {}) {
@@ -90,6 +92,7 @@ export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrid
   const syncUsage = overrides.syncUsage ?? syncGatewayClientTrafficUsage;
   const disableClient = overrides.disableClient ?? disableGatewayClientForQuota;
   const applyProfile = overrides.applyProfile ?? applyXrayProfile;
+  const closeTunnels = overrides.closeTunnels ?? closeActiveGatewayTunnels;
   const clients = await listClients();
   const usage = await syncUsage(clients);
   if (!usage) return { trafficUsageAvailable: false, disabledClientIds: [] as number[] };
@@ -101,6 +104,7 @@ export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrid
   if (exhausted.length === 0) return { trafficUsageAvailable: true, disabledClientIds: [] as number[] };
 
   for (const client of exhausted) await disableClient(client.id);
+  closeTunnels();
   await applyProfile(profile);
   return { trafficUsageAvailable: true, disabledClientIds: exhausted.map(client => client.id) };
 }

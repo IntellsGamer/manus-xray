@@ -25,15 +25,18 @@ describe("Xray client traffic counters", () => {
     ] as GatewayClient[];
     const disableClient = vi.fn().mockResolvedValue(clients[0]);
     const applyProfile = vi.fn().mockResolvedValue(undefined);
+    const closeTunnels = vi.fn().mockReturnValue(1);
     const result = await enforceGatewayTrafficQuotas({ id: 1 } as VlessProfile, {
       listClients: vi.fn().mockResolvedValue(clients),
       syncUsage: vi.fn().mockResolvedValue(new Map([[1, 1024], [2, 50], [3, 1024]])),
       disableClient,
       applyProfile,
+      closeTunnels,
     });
 
     expect(result).toEqual({ trafficUsageAvailable: true, disabledClientIds: [1] });
     expect(disableClient).toHaveBeenCalledWith(1);
+    expect(closeTunnels).toHaveBeenCalledTimes(1);
     expect(applyProfile).toHaveBeenCalledTimes(1);
   });
 });

@@ -5,6 +5,7 @@ import type { VlessProfile } from "../drizzle/schema";
 import { getVlessProfile } from "./db";
 import { internalInboundForPath, normaliseWsPath } from "./vless";
 import { applyXrayProfile, enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
+import { trackGatewayTunnel } from "./gatewayTunnels";
 
 type UpgradeDependencies = {
   getProfile?: () => Promise<VlessProfile | undefined>;
@@ -52,6 +53,7 @@ async function bridgeUpgrade(
     clearTimeout(connectTimeout);
     upstream.write(buildUpgradeRequest(req, internalPort));
     if (head.length > 0) upstream.write(head);
+    trackGatewayTunnel(socket, upstream);
     socket.pipe(upstream).pipe(socket);
   });
   upstream.once("error", () => {
@@ -60,6 +62,7 @@ async function bridgeUpgrade(
   });
   socket.once("error", () => upstream.destroy());
   socket.once("close", () => upstream.destroy());
+  upstream.once("close", () => socket.destroy());
 }
 
 /**
