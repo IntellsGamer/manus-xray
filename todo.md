@@ -16,4 +16,12 @@
 - [x] Add automated coverage and a loopback end-to-end test for the WebSocket proxy architecture.
 - [x] Replace the outdated deployment boundary documentation and checkpoint the revised implementation.
 - [x] Diagnose the timeout of the supplied `nginxadmin-kw4zek2d.manus.space` VLESS URI against the published first revision.
-- [ ] Validate the supplied public VLESS URI after the WebSocket bridge revision is published.
+- [x] Validate the supplied public VLESS URI after the WebSocket bridge revision is published.
+- [x] Prevent an Xray cold-start race by waiting for the private listener before forwarding the first public WebSocket upgrade.
+- [x] Add persistent VMess and Trojan profile parameters alongside the working VLESS profile.
+- [x] Add a managed SOCKS5 inbound configuration and credential rotation controls.
+- [x] Generate VMess and Trojan URIs, an Xray client JSON for SOCKS5-over-WebSocket, and the VLESS/VMess/Trojan subscription representation.
+- [x] Add QR-code import dialogs for every generated client connection URI.
+- [x] Redesign the admin dashboard into a refined multi-protocol control surface with clear profile selection.
+- [x] Add system-theme detection with an accessible manual light/dark override that persists per browser.
+- [x] Test all profile serializers, QR inputs, theme switching, and the expanded admin layout before checkpointing.

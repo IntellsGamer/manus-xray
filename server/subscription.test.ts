@@ -16,6 +16,13 @@ const profile: VlessProfile = {
   wsPath: "/vless",
   tlsEnabled: true,
   subscriptionToken: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  vmessUuid: "f0f5027c-7325-43d2-97c3-84957a7934e9",
+  vmessWsPath: "/vmess",
+  trojanPassword: "test-trojan-password",
+  trojanWsPath: "/trojan",
+  socksUsername: "gateway",
+  socksPassword: "test-socks-password",
+  socksWsPath: "/socks",
   createdAt: new Date(),
   updatedAt: new Date(),
 };

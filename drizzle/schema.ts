@@ -37,6 +37,13 @@ export const vlessProfiles = mysqlTable("vless_profiles", {
   wsPath: varchar("wsPath", { length: 255 }).notNull(),
   tlsEnabled: boolean("tlsEnabled").notNull().default(true),
   subscriptionToken: varchar("subscriptionToken", { length: 96 }).notNull().unique(),
+  vmessUuid: varchar("vmessUuid", { length: 36 }).notNull().default(""),
+  vmessWsPath: varchar("vmessWsPath", { length: 255 }).notNull().default("/vmess"),
+  trojanPassword: varchar("trojanPassword", { length: 64 }).notNull().default(""),
+  trojanWsPath: varchar("trojanWsPath", { length: 255 }).notNull().default("/trojan"),
+  socksUsername: varchar("socksUsername", { length: 64 }).notNull().default(""),
+  socksPassword: varchar("socksPassword", { length: 64 }).notNull().default(""),
+  socksWsPath: varchar("socksWsPath", { length: 255 }).notNull().default("/socks"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

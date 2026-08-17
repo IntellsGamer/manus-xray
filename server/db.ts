@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
-import { createSubscriptionToken, createVlessUuid, normaliseWsPath } from "./vless";
+import { createGatewayCredential, createSubscriptionToken, createVlessUuid, normaliseWsPath } from "./vless";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -112,7 +112,23 @@ export async function getVlessProfileBySubscriptionToken(subscriptionToken: stri
 
 export async function ensureVlessProfile(defaultServerAddress: string): Promise<VlessProfile> {
   const existing = await getVlessProfile();
-  if (existing) return existing;
+  if (existing) {
+    const missingProtocolCredentials = {
+      vmessUuid: existing.vmessUuid || createVlessUuid(),
+      trojanPassword: existing.trojanPassword || createGatewayCredential(),
+      socksUsername: existing.socksUsername || "gateway",
+      socksPassword: existing.socksPassword || createGatewayCredential(),
+    };
+    const needsBackfill = !existing.vmessUuid || !existing.trojanPassword || !existing.socksUsername || !existing.socksPassword;
+    if (!needsBackfill) return existing;
+
+    const db = await getDb();
+    if (!db) throw new Error("Database is unavailable");
+    await db.update(vlessProfiles).set(missingProtocolCredentials).where(eq(vlessProfiles.id, 1));
+    const hydrated = await getVlessProfile();
+    if (!hydrated) throw new Error("Failed to hydrate multi-protocol gateway profile");
+    return hydrated;
+  }
 
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
@@ -125,6 +141,13 @@ export async function ensureVlessProfile(defaultServerAddress: string): Promise<
     wsPath: "/vless",
     tlsEnabled: true,
     subscriptionToken: createSubscriptionToken(),
+    vmessUuid: createVlessUuid(),
+    vmessWsPath: "/vmess",
+    trojanPassword: createGatewayCredential(),
+    trojanWsPath: "/trojan",
+    socksUsername: "gateway",
+    socksPassword: createGatewayCredential(),
+    socksWsPath: "/socks",
   };
 
   try {
@@ -176,6 +199,21 @@ export async function regenerateSubscriptionToken() {
     .update(vlessProfiles)
     .set({ subscriptionToken: createSubscriptionToken() })
     .where(eq(vlessProfiles.id, 1));
+  const profile = await getVlessProfile();
+  if (!profile) throw new Error("VLESS profile was not found");
+  return profile;
+}
+
+export async function regenerateGatewayProtocolCredential(protocol: "vmess" | "trojan" | "socks") {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  const changes = protocol === "vmess"
+    ? { vmessUuid: createVlessUuid() }
+    : protocol === "trojan"
+      ? { trojanPassword: createGatewayCredential() }
+      : { socksPassword: createGatewayCredential() };
+  await db.update(vlessProfiles).set(changes).where(eq(vlessProfiles.id, 1));
   const profile = await getVlessProfile();
   if (!profile) throw new Error("VLESS profile was not found");
   return profile;

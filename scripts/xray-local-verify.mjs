@@ -10,8 +10,8 @@ const xrayBinary = process.env.XRAY_BINARY_PATH || "/home/ubuntu/xray-validation
 const workDir = resolve("/tmp/nginx-vless-xray-check");
 const uuid = "51dc1a8e-0667-4ed5-aa36-15c8c5a85125";
 const serverPort = 18080;
-const socksPort = 18081;
-const bridgePort = 18082;
+const socksPort = 18181;
+const bridgePort = 18182;
 const profile = {
   id: 1,
   uuid,
@@ -20,6 +20,13 @@ const profile = {
   wsPath: "/vless",
   tlsEnabled: false,
   subscriptionToken: "local_xray_validation_token_00000",
+  vmessUuid: "f0f5027c-7325-43d2-97c3-84957a7934e9",
+  vmessWsPath: "/vmess",
+  trojanPassword: "local-trojan-password",
+  trojanWsPath: "/trojan",
+  socksUsername: "gateway",
+  socksPassword: "local-socks-password",
+  socksWsPath: "/socks",
   createdAt: new Date(),
   updatedAt: new Date(),
 };

@@ -3,7 +3,7 @@ import net, { type Socket } from "net";
 import type { Duplex } from "stream";
 import type { VlessProfile } from "../drizzle/schema";
 import { getVlessProfile } from "./db";
-import { normaliseWsPath } from "./vless";
+import { internalInboundForPath, normaliseWsPath } from "./vless";
 import { applyXrayProfile, xrayInternalPort } from "./xrayRuntime";
 
 type UpgradeDependencies = {
@@ -33,13 +33,17 @@ async function bridgeUpgrade(
 ) {
   const requestUrl = new URL(req.url || "/", "http://local-gateway");
   const profile = await dependencies.getProfile();
-  if (!profile || requestUrl.pathname !== normaliseWsPath(profile.wsPath)) {
+  if (!profile) {
     socket.destroy();
     return;
   }
 
+  const internalPort = internalInboundForPath(profile, dependencies.internalPort(), requestUrl.pathname);
+  if (!internalPort) {
+    socket.destroy();
+    return;
+  }
   await dependencies.applyProfile(profile);
-  const internalPort = dependencies.internalPort();
   const upstream = net.createConnection({ host: "127.0.0.1", port: internalPort });
   const connectTimeout = setTimeout(() => closeSockets(socket, upstream), 5000);
 

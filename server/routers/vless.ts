@@ -1,12 +1,13 @@
 import { z } from "zod";
 import {
   ensureVlessProfile,
+  regenerateGatewayProtocolCredential,
   regenerateSubscriptionToken,
   regenerateVlessUuid,
   updateVlessProfile,
 } from "../db";
 import { adminProcedure, router } from "../_core/trpc";
-import { buildVlessUri, normaliseWsPath } from "../vless";
+import { buildSocksClientConfig, buildTrojanUri, buildVlessUri, buildVmessUri, normaliseWsPath } from "../vless";
 import { applyXrayProfile } from "../xrayRuntime";
 
 const profileInput = z.object({
@@ -31,6 +32,20 @@ function presentProfile(profile: Awaited<ReturnType<typeof ensureVlessProfile>>)
     wsPath: profile.wsPath,
     tlsEnabled: profile.tlsEnabled,
     vlessUri: buildVlessUri(profile),
+    vmess: {
+      uuid: profile.vmessUuid,
+      wsPath: profile.vmessWsPath,
+      uri: buildVmessUri(profile),
+    },
+    trojan: {
+      wsPath: profile.trojanWsPath,
+      uri: buildTrojanUri(profile),
+    },
+    socks5: {
+      username: profile.socksUsername,
+      wsPath: profile.socksWsPath,
+      clientConfig: buildSocksClientConfig(profile),
+    },
     subscriptionPath: `/sub/${profile.subscriptionToken}`,
     updatedAt: profile.updatedAt,
   };
@@ -57,6 +72,12 @@ export const vlessRouter = router({
   regenerateToken: adminProcedure.mutation(async ({ ctx }) => {
     await ensureVlessProfile(requestHost(ctx.req.headers));
     const profile = await regenerateSubscriptionToken();
+    await applyXrayProfile(profile);
+    return presentProfile(profile);
+  }),
+  regenerateProtocolCredential: adminProcedure.input(z.object({ protocol: z.enum(["vmess", "trojan", "socks"]) })).mutation(async ({ ctx, input }) => {
+    await ensureVlessProfile(requestHost(ctx.req.headers));
+    const profile = await regenerateGatewayProtocolCredential(input.protocol);
     await applyXrayProfile(profile);
     return presentProfile(profile);
   }),
