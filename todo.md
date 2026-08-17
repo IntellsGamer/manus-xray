@@ -117,3 +117,4 @@
 - [x] Add a focused regression proving a finite client budget is shared across concurrent protocol tunnels in the real bridge flow.
 - [x] Add a real concurrent VLESS-and-VMess finite-rate bridge test proving both protocols consume the same client Mbps budget.
 - [x] Rerun full verification after the cross-protocol shared-budget regression is added.
+- [x] Show each client’s configured Mbps limit in the browser-facing Gateway subscription status page, with `-1` rendered as unlimited.
