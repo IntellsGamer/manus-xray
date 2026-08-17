@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { createSubscriptionToken, createVlessUuid, normaliseWsPath } from "./vless";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -89,4 +90,93 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getVlessProfile() {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  const result = await db.select().from(vlessProfiles).where(eq(vlessProfiles.id, 1)).limit(1);
+  return result[0];
+}
+
+export async function getVlessProfileBySubscriptionToken(subscriptionToken: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  const result = await db
+    .select()
+    .from(vlessProfiles)
+    .where(eq(vlessProfiles.subscriptionToken, subscriptionToken))
+    .limit(1);
+  return result[0];
+}
+
+export async function ensureVlessProfile(defaultServerAddress: string): Promise<VlessProfile> {
+  const existing = await getVlessProfile();
+  if (existing) return existing;
+
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  const initialProfile = {
+    id: 1,
+    uuid: createVlessUuid(),
+    serverAddress: defaultServerAddress,
+    port: 443,
+    wsPath: "/vless",
+    tlsEnabled: true,
+    subscriptionToken: createSubscriptionToken(),
+  };
+
+  try {
+    await db.insert(vlessProfiles).values(initialProfile);
+  } catch (error) {
+    // Two initial dashboard requests may race; the fixed primary key makes the
+    // winning row authoritative and safe to re-read.
+    const profileAfterRace = await getVlessProfile();
+    if (profileAfterRace) return profileAfterRace;
+    throw error;
+  }
+
+  const created = await getVlessProfile();
+  if (!created) throw new Error("Failed to create VLESS profile");
+  return created;
+}
+
+export async function updateVlessProfile(
+  changes: Pick<VlessProfile, "serverAddress" | "port" | "wsPath" | "tlsEnabled">
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  await db
+    .update(vlessProfiles)
+    .set({ ...changes, wsPath: normaliseWsPath(changes.wsPath) })
+    .where(eq(vlessProfiles.id, 1));
+
+  const profile = await getVlessProfile();
+  if (!profile) throw new Error("VLESS profile was not found");
+  return profile;
+}
+
+export async function regenerateVlessUuid() {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  await db.update(vlessProfiles).set({ uuid: createVlessUuid() }).where(eq(vlessProfiles.id, 1));
+  const profile = await getVlessProfile();
+  if (!profile) throw new Error("VLESS profile was not found");
+  return profile;
+}
+
+export async function regenerateSubscriptionToken() {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  await db
+    .update(vlessProfiles)
+    .set({ subscriptionToken: createSubscriptionToken() })
+    .where(eq(vlessProfiles.id, 1));
+  const profile = await getVlessProfile();
+  if (!profile) throw new Error("VLESS profile was not found");
+  return profile;
+}

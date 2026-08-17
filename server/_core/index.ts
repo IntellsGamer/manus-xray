@@ -6,6 +6,9 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
+import { registerSubscriptionRoute } from "../subscription";
+import { getVlessProfile } from "../db";
+import { applyXrayProfile, stopXrayRuntime } from "../xrayRuntime";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -36,6 +39,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  registerSubscriptionRoute(app);
   // tRPC API
   app.use(
     "/api/trpc",
@@ -51,6 +55,16 @@ async function startServer() {
     serveStatic(app);
   }
 
+  if (process.env.XRAY_RUNTIME_ENABLED === "true") {
+    try {
+      const profile = await getVlessProfile();
+      if (profile) await applyXrayProfile(profile);
+      else console.warn("[Xray] No stored VLESS profile exists; runtime start deferred until profile creation.");
+    } catch (error) {
+      console.error("[Xray] Stored profile could not be applied during startup:", error);
+    }
+  }
+
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
 
@@ -61,6 +75,12 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  const stop = () => {
+    stopXrayRuntime().finally(() => server.close());
+  };
+  process.once("SIGTERM", stop);
+  process.once("SIGINT", stop);
 }
 
 startServer().catch(console.error);

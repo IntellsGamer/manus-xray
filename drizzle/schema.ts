@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -25,4 +25,21 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/**
+ * A single owner-managed VLESS profile. The fixed primary key keeps the panel
+ * intentionally scoped to one gateway rather than becoming multi-tenant.
+ */
+export const vlessProfiles = mysqlTable("vless_profiles", {
+  id: int("id").primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique(),
+  serverAddress: varchar("serverAddress", { length: 255 }).notNull(),
+  port: int("port").notNull(),
+  wsPath: varchar("wsPath", { length: 255 }).notNull(),
+  tlsEnabled: boolean("tlsEnabled").notNull().default(true),
+  subscriptionToken: varchar("subscriptionToken", { length: 96 }).notNull().unique(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type VlessProfile = typeof vlessProfiles.$inferSelect;
+export type InsertVlessProfile = typeof vlessProfiles.$inferInsert;
