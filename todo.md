@@ -85,5 +85,5 @@
 - [x] Add regression assertions confirming simplified browser subscription status omits endpoint, delivery-count, and last-delivery blocks.
 - [x] Add an owner-only per-client Reset usage action that clears usage and establishes a fresh traffic-counter baseline without changing client credentials or quota policy.
 - [x] Diagnose and correct the anomalous high usage recorded for the affected named client without altering that client’s credentials or policy.
-- [ ] Add deterministic regression coverage proving VLESS, VMess, and Trojan counters for one client are attributed separately and summed only once.
-- [ ] Verify the affected client’s live post-fix Xray counter behavior after protocol-specific runtime identities are deployed.
+- [x] Add deterministic regression coverage proving VLESS, VMess, and Trojan counters for one client are attributed separately and summed only once.
+- [x] Verify the affected client’s live post-fix Xray counter behavior after protocol-specific runtime identities are deployed.

@@ -244,7 +244,7 @@ async function main() {
     if (request.code !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
     if (!request.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VLESS transport");
     const stats = await runCommand(xrayBinary, ["api", "statsquery", `--server=127.0.0.1:${serverPort + 10}`, "-pattern", "gateway-client-99"]);
-    if (stats.code !== 0 || !stats.stdout.includes("gateway-client-99@local.invalid")) throw new Error(`Temporary 1 MB client statistics query failed: ${stats.stderr || stats.stdout}`);
+    if (stats.code !== 0 || !stats.stdout.includes("gateway-client-99-vless@local.invalid")) throw new Error(`Temporary 1 MB client statistics query failed: ${stats.stderr || stats.stdout}`);
 
     const directVmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${directVmessSocksPort}`, "https://example.com/"]);
     if (directVmessRequest.code !== 0) throw new Error(`Direct VMess transport request failed: ${directVmessRequest.stderr}`);
@@ -270,7 +270,7 @@ async function main() {
     if (generated.inbounds?.[0]?.settings?.clients?.[0]?.id !== uuid) {
       throw new Error("Generated config did not preserve the client UUID");
     }
-    if (!generated.inbounds?.[0]?.settings?.clients?.some(client => client.id === temporaryQuotaClient.vlessUuid && client.email === "gateway-client-99@local.invalid")) {
+    if (!generated.inbounds?.[0]?.settings?.clients?.some(client => client.id === temporaryQuotaClient.vlessUuid && client.email === "gateway-client-99-vless@local.invalid")) {
       throw new Error("Generated config did not preserve the temporary 1 MB client statistics identity");
     }
   }
