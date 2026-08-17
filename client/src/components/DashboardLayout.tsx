@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
+import { navigateToAdminSection, type AdminSectionId } from "@/lib/adminNavigation";
 import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -28,8 +29,8 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Connection control", path: "/admin" },
-  { icon: Users, label: "Clients & routes", path: "/admin/clients" },
+  { icon: LayoutDashboard, label: "Connection control", sectionId: "gateway-overview" as AdminSectionId },
+  { icon: Users, label: "Clients & routes", sectionId: "client-management" as AdminSectionId },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -110,7 +111,7 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  const activeMenuItem = menuItems[0];
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -178,20 +179,22 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
+              {menuItems.map((item, index) => {
+                const isActive = index === 0 ? location === "/admin" : false;
                 return (
-                  <SidebarMenuItem key={item.path}>
+                  <SidebarMenuItem key={item.sectionId}>
                     <SidebarMenuButton
+                      asChild
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
                       tooltip={item.label}
                       className={`h-10 transition-all font-normal`}
                     >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span>{item.label}</span>
+                      <a href={`#${item.sectionId}`} onClick={() => navigateToAdminSection(item.sectionId, setLocation, sectionId => {
+                        window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                      })}>
+                        <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                        <span>{item.label}</span>
+                      </a>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

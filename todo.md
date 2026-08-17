@@ -45,3 +45,9 @@
 - [x] Add credential-specific import details to browser subscription-status responses for a valid named client.
 - [x] Add an explicit client-revocation action that invalidates credentials and the subscription token separately from ordinary enable/disable controls.
 - [x] Add deterministic path-collision and stronger named-client isolation tests, then rerun the complete verification suite.
+- [x] Consolidate client, route, telemetry, and lifecycle controls into the existing `/admin` workspace.
+- [x] Convert the sidebar from separate admin routes into keyboard-accessible in-page section navigation.
+- [x] Remove the redundant `/admin/clients` route and verify all unified workspace flows before checkpointing.
+- [x] Run post-consolidation type, unit, production-build, and unified sidebar-navigation verification before checkpointing.
+- [x] Verify both unified sidebar entries navigate to their intended in-page `/admin` sections and add durable regression coverage.
+- [x] Make both unified sidebar controls anchor-addressable and verify the rendered `#gateway-overview` and `#client-management` destinations.

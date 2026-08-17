@@ -15,7 +15,7 @@ function copy(value: string, label: string) {
   navigator.clipboard.writeText(value).then(() => toast.success(`${label} copied`), () => toast.error(`Could not copy ${label.toLowerCase()}`));
 }
 
-function ClientManager() {
+export function ClientManagerContent() {
   const utils = trpc.useUtils();
   const { data: profile, isLoading: loadingProfile } = trpc.vless.get.useQuery(undefined, { retry: false });
   const { data: clients, isLoading: loadingClients } = trpc.vless.clients.useQuery(undefined, { retry: false });
@@ -50,5 +50,5 @@ export default function Clients() {
   const { user, loading } = useAuth();
   if (loading) return <div className="protocol-shell min-h-screen" />;
   if (!user || user.role !== "admin") return <div className="protocol-shell grid min-h-screen place-items-center p-6"><div className="protocol-panel p-8 text-center"><h1 className="text-xl font-semibold">Owner access required</h1><p className="mt-2 text-sm text-muted-foreground">This page is available only to the gateway owner.</p></div></div>;
-  return <DashboardLayout><ClientManager /></DashboardLayout>;
+  return <DashboardLayout><ClientManagerContent /></DashboardLayout>;
 }
