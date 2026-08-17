@@ -79,9 +79,17 @@ function meterClientTunnel(
   let flushed = false;
   let clientToGatewayBytes = initialBytes;
   let gatewayToClientBytes = 0;
+  let lastLoggedTrafficTotal = 0;
+  const logTraffic = (phase: "sample" | "final") => {
+    const total = clientToGatewayBytes + gatewayToClientBytes;
+    if (total === 0 || (phase === "sample" && total - lastLoggedTrafficTotal < 1024 * 1024)) return;
+    lastLoggedTrafficTotal = total;
+    console.info(`[Gateway traffic] phase=${phase} client=${client.id} protocol=${protocol} uplink=${clientToGatewayBytes} downlink=${gatewayToClientBytes} total=${total}`);
+  };
   const observeClient = (chunk: Buffer) => {
     clientToGatewayBytes += chunk.length;
     void meter.observe(chunk.length);
+    logTraffic("sample");
   };
   let upstreamHandshakeComplete = false;
   let upstreamHandshakeBuffer = Buffer.alloc(0);
@@ -96,11 +104,13 @@ function meterClientTunnel(
     if (payloadBytes > 0) {
       gatewayToClientBytes += payloadBytes;
       void meter.observe(payloadBytes);
+      logTraffic("sample");
     }
   };
   const observeUpstreamPayload = (chunk: Buffer) => {
     gatewayToClientBytes += chunk.length;
     void meter.observe(chunk.length);
+    logTraffic("sample");
   };
   publicSocket.on("data", observeClient);
   upstream.on("data", chunk => {
@@ -112,9 +122,7 @@ function meterClientTunnel(
     if (flushed) return;
     flushed = true;
     void meter.flush(true);
-    if (clientToGatewayBytes + gatewayToClientBytes > 0) {
-      console.info(`[Gateway traffic] client=${client.id} protocol=${protocol} uplink=${clientToGatewayBytes} downlink=${gatewayToClientBytes} total=${clientToGatewayBytes + gatewayToClientBytes}`);
-    }
+    logTraffic("final");
   };
   publicSocket.once("close", finalize);
   upstream.once("close", finalize);
