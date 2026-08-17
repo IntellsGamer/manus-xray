@@ -102,3 +102,8 @@
 - [x] Redesign the create-client policy fields with explicit Storage limit and Day limit labels, keeping the GB selector visually attached to storage.
 - [x] Add route-keyed quota-hit regression coverage that proves VMess and Trojan tunnels reach the same forced-closure enforcement path as VLESS.
 - [x] Record the production 500 as a transient recovered incident with verified public-root stability rather than claiming an undeployed repair.
+- [ ] Diagnose and correct the renewed 2–3× backend tunnel-meter overcount reported after an 8–10 MB download.
+- [ ] Add regression coverage proving each gateway payload direction is counted once without WebSocket bridge echo duplication.
+- [ ] Verify the reported 100 MB client’s corrected usage and enabled quota state after deployment.
+- [ ] Instrument the affected client’s route-keyed traffic flushes with direction and tunnel identity to isolate the extra accumulated bytes.
+- [ ] Reconcile the affected client’s incorrect 25.52 MB stored total only after the duplication source is proven and corrected.

@@ -67,6 +67,7 @@ function meterClientTunnel(
   initialBytes = 0,
   recordTraffic: (clientId: number, bytes: number) => Promise<Pick<GatewayClient, "trafficLimitBytes" | "trafficUsedBytes">> = recordGatewayClientTunnelTraffic,
   enforceQuota: (profile: VlessProfile) => Promise<unknown> = enforceGatewayTrafficQuotas,
+  protocol: "vless" | "vmess" | "trojan" | "socks" = "vless",
 ) {
   const meter = createTunnelUsageFlusher({
     clientId: client.id,
@@ -76,26 +77,44 @@ function meterClientTunnel(
     enforceQuota,
   });
   let flushed = false;
-  const observe = (chunk: Buffer) => { void meter.observe(chunk.length); };
+  let clientToGatewayBytes = initialBytes;
+  let gatewayToClientBytes = 0;
+  const observeClient = (chunk: Buffer) => {
+    clientToGatewayBytes += chunk.length;
+    void meter.observe(chunk.length);
+  };
   let upstreamHandshakeComplete = false;
   let upstreamHandshakeBuffer = Buffer.alloc(0);
   const observeUpstream = (chunk: Buffer) => {
-    if (upstreamHandshakeComplete) return observe(chunk);
+    if (upstreamHandshakeComplete) return observeUpstreamPayload(chunk);
     upstreamHandshakeBuffer = Buffer.concat([upstreamHandshakeBuffer, chunk]);
     const headerBoundary = upstreamHandshakeBuffer.indexOf("\r\n\r\n");
     if (headerBoundary === -1) return;
     upstreamHandshakeComplete = true;
     const payloadBytes = upstreamHandshakeBuffer.length - headerBoundary - 4;
     upstreamHandshakeBuffer = Buffer.alloc(0);
-    if (payloadBytes > 0) void meter.observe(payloadBytes);
+    if (payloadBytes > 0) {
+      gatewayToClientBytes += payloadBytes;
+      void meter.observe(payloadBytes);
+    }
   };
-  publicSocket.on("data", observe);
-  upstream.on("data", observeUpstream);
+  const observeUpstreamPayload = (chunk: Buffer) => {
+    gatewayToClientBytes += chunk.length;
+    void meter.observe(chunk.length);
+  };
+  publicSocket.on("data", observeClient);
+  upstream.on("data", chunk => {
+    if (upstreamHandshakeComplete) observeUpstreamPayload(chunk);
+    else observeUpstream(chunk);
+  });
   void meter.flush();
   const finalize = () => {
     if (flushed) return;
     flushed = true;
     void meter.flush(true);
+    if (clientToGatewayBytes + gatewayToClientBytes > 0) {
+      console.info(`[Gateway traffic] client=${client.id} protocol=${protocol} uplink=${clientToGatewayBytes} downlink=${gatewayToClientBytes} total=${clientToGatewayBytes + gatewayToClientBytes}`);
+    }
   };
   publicSocket.once("close", finalize);
   upstream.once("close", finalize);
@@ -128,7 +147,7 @@ async function bridgeUpgrade(
     clearTimeout(connectTimeout);
     upstream.write(buildUpgradeRequest(req, route.port, route.internalPath));
     trackGatewayTunnel(socket, upstream);
-    if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
+    if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota, route.protocol);
     if (head.length > 0) upstream.write(head);
     socket.pipe(upstream).pipe(socket);
   });
