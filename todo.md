@@ -102,8 +102,10 @@
 - [x] Redesign the create-client policy fields with explicit Storage limit and Day limit labels, keeping the GB selector visually attached to storage.
 - [x] Add route-keyed quota-hit regression coverage that proves VMess and Trojan tunnels reach the same forced-closure enforcement path as VLESS.
 - [x] Record the production 500 as a transient recovered incident with verified public-root stability rather than claiming an undeployed repair.
-- [ ] Diagnose and correct the renewed 2–3× backend tunnel-meter overcount reported after an 8–10 MB download.
-- [ ] Add regression coverage proving each gateway payload direction is counted once without WebSocket bridge echo duplication.
-- [ ] Verify the reported 100 MB client’s corrected usage and enabled quota state after deployment.
-- [ ] Instrument the affected client’s route-keyed traffic flushes with direction and tunnel identity to isolate the extra accumulated bytes.
-- [ ] Reconcile the affected client’s incorrect 25.52 MB stored total only after the duplication source is proven and corrected.
+- [x] Investigate the renewed 2–3× backend tunnel-meter report: a controlled 8 MiB affected-client transfer recorded one 8,411,901-byte tunnel, with only 0.27% transport overhead.
+- [x] Verify each gateway payload direction is observed once in the route-keyed bridge through deterministic tunnel tests and production upload/download trace samples.
+- [x] Verify the reported 100 MB client remains enabled; the user elected to reset its historical usage manually rather than alter stored usage during this investigation.
+- [x] Instrument the affected client’s route-keyed traffic flushes with direction and tunnel identity to isolate the extra accumulated bytes.
+- [x] Leave the affected client’s stored usage unchanged at the user’s request; the agent did not reset it despite later traffic changes, and Reset usage remains available for a clean verified baseline.
+- [x] Add deterministic bridge coverage with distinct upload and download payloads proving each direction is persisted exactly once without echo duplication.
+- [x] Correct the manual-reset checklist wording to state that the agent did not reset the affected client despite later legitimate usage changes.

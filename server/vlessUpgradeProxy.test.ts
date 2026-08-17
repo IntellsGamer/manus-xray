@@ -189,6 +189,34 @@ describe("VLESS WebSocket upgrade bridge", () => {
     expect(enforceQuota).toHaveBeenCalledTimes(2);
   });
 
+  it("persists each uplink and downlink payload exactly once without counting the upgrade handshake", async () => {
+    const namedClient = { id: 12, enabled: true, connectionToken: "bidirectional-route-token", expiresAt: null } as unknown as import("../drizzle/schema").GatewayClient;
+    const recordTraffic = vi.fn().mockResolvedValue({ trafficLimitBytes: -1, trafficUsedBytes: 7 });
+    const upstream = createTcpServer(socket => {
+      socket.once("data", requestBytes => {
+        expect(requestBytes.toString()).toContain("GET /vless HTTP/1.1");
+        socket.write("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\ndown");
+      });
+    });
+    const upstreamPort = await listen(upstream);
+    const bridge = createHttpServer((_request, response) => response.end("not found"));
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      getClients: async () => [namedClient],
+      applyProfile: vi.fn().mockResolvedValue(undefined),
+      internalPort: () => upstreamPort,
+      recordTraffic,
+      enforceQuota: vi.fn().mockResolvedValue(undefined),
+    });
+    const bridgePort = await listen(bridge);
+
+    await upgradeWithBufferedPayload(bridgePort, "/vless/bidirectional-route-token", "up!");
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    expect(recordTraffic).toHaveBeenCalledTimes(1);
+    expect(recordTraffic).toHaveBeenCalledWith(12, 7);
+  });
+
   it.each([
     ["vmess", 1],
     ["trojan", 2],
