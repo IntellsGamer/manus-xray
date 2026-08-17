@@ -87,7 +87,6 @@ export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrid
     return client.trafficUsedBytes >= client.trafficLimitBytes;
   });
   if (exhausted.length === 0) {
-    await applyProfile(profile);
     return { trafficUsageAvailable: true, disabledClientIds: [] as number[] };
   }
 

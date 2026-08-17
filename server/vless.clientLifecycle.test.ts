@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
 
 const mocks = vi.hoisted(() => ({
+  activateGatewayClientIfDue: vi.fn(),
   ensureVlessProfile: vi.fn(),
   getGatewayClientById: vi.fn(),
   createGatewayClient: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./db", () => ({
+  activateGatewayClientIfDue: mocks.activateGatewayClientIfDue,
   createGatewayClient: mocks.createGatewayClient,
   deleteGatewayClient: mocks.deleteGatewayClient,
   ensureVlessProfile: mocks.ensureVlessProfile,
@@ -123,7 +125,8 @@ describe("client lifecycle mutations", () => {
       expiresAt: new Date("2026-09-16T00:00:00.000Z"),
     });
     mocks.deleteGatewayClient.mockResolvedValue(undefined);
-    mocks.createGatewayClient.mockResolvedValue(storedClient);
+    mocks.createGatewayClient.mockResolvedValue({ ...storedClient, enabled: false, activationDueAt: new Date(Date.now() + 12_000) });
+    mocks.activateGatewayClientIfDue.mockResolvedValue({ client: storedClient, activated: true, activationPending: false });
     mocks.applyXrayProfile.mockResolvedValue(undefined);
     mocks.getGatewayClientById.mockResolvedValue(storedClient);
     mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, quotaExhaustedAt: null });
@@ -143,12 +146,34 @@ describe("client lifecycle mutations", () => {
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
   });
 
-  it("defaults new clients to unlimited speed and rejects an ambiguous zero-Mbps policy", async () => {
+  it("persists a new client once, returns it pending before an Xray reload, and retains retry-safe creation input", async () => {
     const caller = vlessRouter.createCaller(adminContext());
-    await caller.createClient({ name: "Unlimited default" });
-    expect(mocks.createGatewayClient).toHaveBeenCalledWith({ name: "Unlimited default", trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1 });
+    const creationRequestId = "ce1b6a8a-0000-4000-8000-000000000001";
+    const result = await caller.createClient({ name: "Unlimited default", creationRequestId });
+    expect(mocks.createGatewayClient).toHaveBeenCalledWith({ name: "Unlimited default", trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1, creationRequestId });
+    expect(mocks.applyXrayProfile).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ enabled: false, activationPending: true });
 
     await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("reloads Xray only when a due client activation succeeds", async () => {
+    const caller = vlessRouter.createCaller(adminContext());
+
+    await caller.activateClient({ id: storedClient.id });
+
+    expect(mocks.activateGatewayClientIfDue).toHaveBeenCalledWith(storedClient.id);
+    expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
+  });
+
+  it("does not reload Xray when a browser attempts activation before the due time", async () => {
+    mocks.activateGatewayClientIfDue.mockResolvedValue({ client: { ...storedClient, enabled: false, activationDueAt: new Date(Date.now() + 2_000) }, activated: false, activationPending: true });
+    const caller = vlessRouter.createCaller(adminContext());
+
+    const result = await caller.activateClient({ id: storedClient.id });
+
+    expect(result).toMatchObject({ enabled: false, activationPending: true, activated: false });
+    expect(mocks.applyXrayProfile).not.toHaveBeenCalled();
   });
 
   it("rejects invalid quota and day-limit requests before persistence", async () => {

@@ -40,4 +40,15 @@ describe("Xray client traffic counters", () => {
     expect(closeTunnels).toHaveBeenCalledTimes(1);
     expect(applyProfile).toHaveBeenCalledTimes(1);
   });
+
+  it("does not restart Xray for a no-op quota check", async () => {
+    const applyProfile = vi.fn().mockResolvedValue(undefined);
+    const result = await enforceGatewayTrafficQuotas({ id: 1 } as VlessProfile, {
+      listClients: vi.fn().mockResolvedValue([{ id: 2, enabled: true, trafficLimitBytes: -1, trafficUsedBytes: 0 }] as GatewayClient[]),
+      applyProfile,
+    });
+
+    expect(result).toEqual({ trafficUsageAvailable: true, disabledClientIds: [] });
+    expect(applyProfile).not.toHaveBeenCalled();
+  });
 });

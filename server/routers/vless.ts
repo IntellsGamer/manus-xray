@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  activateGatewayClientIfDue,
   createGatewayClient,
   deleteGatewayClient,
   ensureVlessProfile,
@@ -86,6 +87,8 @@ function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, 
     subscriptionDeliveryCount: client.subscriptionDeliveryCount,
     lastSubscriptionAt: client.lastSubscriptionAt,
     quotaExhaustedAt: client.quotaExhaustedAt,
+    activationDueAt: client.activationDueAt,
+    activationPending: Boolean(client.activationDueAt && !client.enabled),
     createdAt: client.createdAt,
     connection: buildClientConnectionDetails(profile, client),
   };
@@ -95,7 +98,6 @@ export const vlessRouter = router({
   get: adminProcedure.query(async ({ ctx }) => {
     const profile = await profileForRequest(ctx.req.headers);
     await enforceGatewayTrafficQuotas(profile);
-    await applyXrayProfile(profile);
     return { ...presentProfile(profile), runtime: getXrayRuntimeStatus() };
   }),
   update: adminProcedure.input(profileInput).mutation(async ({ ctx, input }) => {
@@ -137,11 +139,16 @@ export const vlessRouter = router({
       recentDeliveries: await listSubscriptionEventsForClient(client.id),
     })));
   }),
-  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1), speedLimitMbps: speedLimitInput.default(-1) })).mutation(async ({ ctx, input }) => {
+  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1), speedLimitMbps: speedLimitInput.default(-1), creationRequestId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await createGatewayClient(input);
-    await applyXrayProfile(profile);
     return presentClient(profile, client);
+  }),
+  activateClient: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const profile = await profileForRequest(ctx.req.headers);
+    const activation = await activateGatewayClientIfDue(input.id);
+    if (activation.activated) await applyXrayProfile(profile);
+    return { ...presentClient(profile, activation.client), activated: activation.activated, activationPending: activation.activationPending };
   }),
   setClientEnabled: adminProcedure.input(z.object({ id: z.number().int().positive(), enabled: z.boolean() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);

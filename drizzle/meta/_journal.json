@@ -71,6 +71,13 @@
       "when": 1786990199253,
       "tag": "0009_nappy_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1786992930825,
+      "tag": "0010_naive_warbound",
+      "breakpoints": true
     }
   ]
 }

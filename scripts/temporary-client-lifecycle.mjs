@@ -20,14 +20,22 @@ async function main() {
   let temporaryId;
 
   try {
-    const created = await caller.createClient({ name: testName, trafficLimitBytes: 1024 * 1024, dayLimit: -1 });
+    const creationRequestId = crypto.randomUUID();
+    const created = await caller.createClient({ name: testName, trafficLimitBytes: 1024 * 1024, dayLimit: -1, creationRequestId });
+    const retried = await caller.createClient({ name: testName, trafficLimitBytes: 1024 * 1024, dayLimit: -1, creationRequestId });
     temporaryId = created.id;
+    if (retried.id !== created.id) throw new Error("A repeated client-creation request produced a duplicate identity");
     if (created.trafficLimitBytes !== 1024 * 1024 || created.dayLimit !== -1) throw new Error("The temporary client did not retain its 1 MB unlimited-day policy");
+    if (!created.activationPending || created.enabled) throw new Error("The temporary client was not returned in its short pending-activation state");
 
     const listed = await caller.clients();
     const persisted = listed.find(client => client.id === temporaryId);
     if (!persisted || persisted.trafficLimitBytes !== 1024 * 1024 || persisted.dayLimit !== -1) throw new Error("The temporary client policy was not visible through the management API");
     if (listed.some(client => client.id !== temporaryId && !existingIds.has(client.id))) throw new Error("Unexpected client identity appeared during temporary validation");
+
+    await new Promise(resolve => setTimeout(resolve, 12_250));
+    const activated = await caller.activateClient({ id: temporaryId });
+    if (!activated.activated || !activated.enabled || activated.activationPending) throw new Error("The temporary client did not activate after its deferred Xray refresh window");
 
     const proxyResponse = await fetch(`http://127.0.0.1:3000${created.subscriptionPath}`, { headers: { accept: "text/plain", "user-agent": "temporary-lifecycle-validator" } });
     if (!proxyResponse.ok) throw new Error(`Temporary subscription returned HTTP ${proxyResponse.status}`);

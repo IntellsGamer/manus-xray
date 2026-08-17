@@ -254,29 +254,66 @@ export async function getGatewayClientBySubscriptionToken(subscriptionToken: str
   return result[0];
 }
 
-export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number; speedLimitMbps?: number }): Promise<GatewayClient> {
+export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number; speedLimitMbps?: number; creationRequestId?: string }): Promise<GatewayClient> {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
+  if (input.creationRequestId) {
+    const existing = await db.select().from(gatewayClients).where(eq(gatewayClients.creationRequestId, input.creationRequestId)).limit(1);
+    if (existing[0]) return existing[0];
+  }
   const dayLimit = input.dayLimit ?? -1;
   const speedLimitMbps = input.speedLimitMbps ?? -1;
-  const result = await db.insert(gatewayClients).values({
-    name: input.name.trim(),
-    enabled: true,
-    vlessUuid: createVlessUuid(),
-    vmessUuid: createVlessUuid(),
-    trojanPassword: createGatewayCredential(),
-    socksUsername: clientSocksUsername(),
-    socksPassword: createGatewayCredential(),
-    subscriptionToken: createSubscriptionToken(),
-    connectionToken: createGatewayCredential(),
-    trafficLimitBytes: input.trafficLimitBytes ?? -1,
-    dayLimit,
-    speedLimitMbps,
-    expiresAt: dayLimit > 0 ? new Date(Date.now() + dayLimit * 86_400_000) : null,
-  });
+  const activationDueAt = input.creationRequestId ? new Date(Date.now() + 12_000) : null;
+  let result;
+  try {
+    result = await db.insert(gatewayClients).values({
+      name: input.name.trim(),
+      enabled: !activationDueAt,
+      vlessUuid: createVlessUuid(),
+      vmessUuid: createVlessUuid(),
+      trojanPassword: createGatewayCredential(),
+      socksUsername: clientSocksUsername(),
+      socksPassword: createGatewayCredential(),
+      subscriptionToken: createSubscriptionToken(),
+      connectionToken: createGatewayCredential(),
+      creationRequestId: input.creationRequestId ?? null,
+      activationDueAt,
+      trafficLimitBytes: input.trafficLimitBytes ?? -1,
+      dayLimit,
+      speedLimitMbps,
+      expiresAt: dayLimit > 0 ? new Date(Date.now() + dayLimit * 86_400_000) : null,
+    });
+  } catch (error) {
+    if (input.creationRequestId) {
+      const existing = await db.select().from(gatewayClients).where(eq(gatewayClients.creationRequestId, input.creationRequestId)).limit(1);
+      if (existing[0]) return existing[0];
+    }
+    throw error;
+  }
   const created = await getGatewayClientById(Number(result[0].insertId));
   if (!created) throw new Error("Failed to create gateway client");
   return created;
+}
+
+export async function activateGatewayClientIfDue(id: number, now = new Date()) {
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found");
+  if (!client.activationDueAt) return { client, activated: false, activationPending: false };
+  if (client.activationDueAt.getTime() > now.getTime()) return { client, activated: false, activationPending: true };
+
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayClients).set({ enabled: true, activationDueAt: null }).where(eq(gatewayClients.id, id));
+  const activated = await getGatewayClientById(id);
+  if (!activated) throw new Error("Gateway client was not found after activation");
+  return { client: activated, activated: true, activationPending: false };
+}
+
+export async function activateDueGatewayClients(now = new Date()) {
+  const clients = await listGatewayClients();
+  const due = clients.filter(client => client.activationDueAt && client.activationDueAt.getTime() <= now.getTime());
+  const results = await Promise.all(due.map(client => activateGatewayClientIfDue(client.id, now)));
+  return results.filter(result => result.activated).map(result => result.client.id);
 }
 
 export async function setGatewayClientEnabled(id: number, enabled: boolean) {
