@@ -69,3 +69,5 @@
 - [x] Present client data as used / maximum, present day limits as days remaining, and keep policy details directly editable.
 - [x] Validate an isolated temporary 1 MB client through local Xray transport and per-user statistics checks.
 - [x] Create a real temporary 1 MB client through the owner client-management flow, verify its actual subscription and availability state, then permanently delete it without modifying existing clients.
+- [x] Replace the blue-tinted dark theme with neutral graphite surfaces, high-contrast typography, restrained borders, and monochrome interaction states while preserving the light theme.
+- [x] Make Gateway connection details, code panes, QR actions, and protocol route controls consistently theme-aware in both light and dark modes.

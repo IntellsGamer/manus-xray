@@ -82,7 +82,10 @@ describe("subscription route", () => {
     const response = await request(`/sub/${profile.subscriptionToken}`, { accept: "text/html", "user-agent": "Mozilla/5.0" });
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
-    await expect(response.text()).resolves.toContain("Global gateway profile");
+    const html = await response.text();
+    expect(html).toContain("Global gateway profile");
+    expect(html).toContain("Appearance");
+    expect(html).toContain('value="dark"');
   });
 
   it("shows credential-specific connection details on a valid named-client browser visit", async () => {
