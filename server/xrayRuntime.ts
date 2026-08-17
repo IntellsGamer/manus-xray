@@ -5,7 +5,7 @@ import { ChildProcess, execFile, spawn } from "child_process";
 import { promisify } from "util";
 import net from "net";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { listGatewayClients, recordGatewayClientTrafficUsage } from "./db";
+import { disableGatewayClientForQuota, listGatewayClients, recordGatewayClientTrafficUsage } from "./db";
 import { buildXrayConfig, clientTrafficEmail } from "./vless";
 
 let runningProcess: ChildProcess | undefined;
@@ -70,6 +70,39 @@ export async function syncGatewayClientTrafficUsage(clients: GatewayClient[]) {
     usage.set(client.id, await recordGatewayClientTrafficUsage(client, counters.get(client.id) || 0));
   }
   return usage;
+}
+
+/**
+ * Samples Xray's per-user counters and disables only clients whose finite
+ * stored quota has been reached. Applying the rebuilt profile restarts the
+ * local Xray process, which closes any in-flight tunnels from the prior
+ * configuration and prevents the disabled credentials from reconnecting.
+ */
+type QuotaEnforcementDependencies = {
+  listClients?: () => Promise<GatewayClient[]>;
+  syncUsage?: (clients: GatewayClient[]) => Promise<Map<number, number> | null>;
+  disableClient?: (id: number) => Promise<GatewayClient>;
+  applyProfile?: (profile: VlessProfile) => Promise<unknown>;
+};
+
+export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrides: QuotaEnforcementDependencies = {}) {
+  const listClients = overrides.listClients ?? listGatewayClients;
+  const syncUsage = overrides.syncUsage ?? syncGatewayClientTrafficUsage;
+  const disableClient = overrides.disableClient ?? disableGatewayClientForQuota;
+  const applyProfile = overrides.applyProfile ?? applyXrayProfile;
+  const clients = await listClients();
+  const usage = await syncUsage(clients);
+  if (!usage) return { trafficUsageAvailable: false, disabledClientIds: [] as number[] };
+
+  const exhausted = clients.filter(client => {
+    if (!client.enabled || client.trafficLimitBytes < 0) return false;
+    return (usage.get(client.id) ?? client.trafficUsedBytes) >= client.trafficLimitBytes;
+  });
+  if (exhausted.length === 0) return { trafficUsageAvailable: true, disabledClientIds: [] as number[] };
+
+  for (const client of exhausted) await disableClient(client.id);
+  await applyProfile(profile);
+  return { trafficUsageAvailable: true, disabledClientIds: exhausted.map(client => client.id) };
 }
 
 async function configFor(profile: VlessProfile) {

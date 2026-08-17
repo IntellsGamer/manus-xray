@@ -17,7 +17,7 @@ import {
 } from "../db";
 import { adminProcedure, router } from "../_core/trpc";
 import { buildClientConnectionDetails, buildSocksClientConfig, buildTrojanUri, buildVlessUri, buildVmessUri, normaliseWsPath } from "../vless";
-import { applyXrayProfile, getXrayRuntimeStatus, syncGatewayClientTrafficUsage } from "../xrayRuntime";
+import { applyXrayProfile, enforceGatewayTrafficQuotas, getXrayRuntimeStatus } from "../xrayRuntime";
 
 const profileInput = z.object({
   serverAddress: z.string().trim().min(1).max(255),
@@ -79,6 +79,7 @@ function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, 
     subscriptionPath: `/sub/${client.subscriptionToken}`,
     subscriptionDeliveryCount: client.subscriptionDeliveryCount,
     lastSubscriptionAt: client.lastSubscriptionAt,
+    quotaExhaustedAt: client.quotaExhaustedAt,
     createdAt: client.createdAt,
     connection: buildClientConnectionDetails(profile, client),
   };
@@ -87,6 +88,7 @@ function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, 
 export const vlessRouter = router({
   get: adminProcedure.query(async ({ ctx }) => {
     const profile = await profileForRequest(ctx.req.headers);
+    await enforceGatewayTrafficQuotas(profile);
     await applyXrayProfile(profile);
     return { ...presentProfile(profile), runtime: getXrayRuntimeStatus() };
   }),
@@ -122,11 +124,10 @@ export const vlessRouter = router({
   }),
   clients: adminProcedure.query(async ({ ctx }) => {
     const profile = await profileForRequest(ctx.req.headers);
-    let clients = await listGatewayClients();
-    const trafficUsage = await syncGatewayClientTrafficUsage(clients);
-    clients = await listGatewayClients();
+    const quotaCheck = await enforceGatewayTrafficQuotas(profile);
+    const clients = await listGatewayClients();
     return Promise.all(clients.map(async client => ({
-      ...presentClient(profile, client, trafficUsage !== null),
+      ...presentClient(profile, client, quotaCheck.trafficUsageAvailable),
       recentDeliveries: await listSubscriptionEventsForClient(client.id),
     })));
   }),

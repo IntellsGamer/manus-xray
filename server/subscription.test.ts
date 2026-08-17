@@ -4,14 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VlessProfile } from "../drizzle/schema";
 
 const databaseMock = vi.hoisted(() => ({ getVlessProfileBySubscriptionToken: vi.fn(), getGatewayClientBySubscriptionToken: vi.fn(), getVlessProfile: vi.fn(), recordSubscriptionDelivery: vi.fn() }));
-const runtimeMock = vi.hoisted(() => ({ syncGatewayClientTrafficUsage: vi.fn() }));
+const runtimeMock = vi.hoisted(() => ({ syncGatewayClientTrafficUsage: vi.fn(), enforceGatewayTrafficQuotas: vi.fn() }));
 vi.mock("./db", () => ({
   getVlessProfileBySubscriptionToken: databaseMock.getVlessProfileBySubscriptionToken,
   getGatewayClientBySubscriptionToken: databaseMock.getGatewayClientBySubscriptionToken,
   getVlessProfile: databaseMock.getVlessProfile,
   recordSubscriptionDelivery: databaseMock.recordSubscriptionDelivery,
 }));
-vi.mock("./xrayRuntime", () => ({ syncGatewayClientTrafficUsage: runtimeMock.syncGatewayClientTrafficUsage }));
+vi.mock("./xrayRuntime", () => ({ syncGatewayClientTrafficUsage: runtimeMock.syncGatewayClientTrafficUsage, enforceGatewayTrafficQuotas: runtimeMock.enforceGatewayTrafficQuotas }));
 
 import { registerSubscriptionRoute } from "./subscription";
 
@@ -47,6 +47,7 @@ afterEach(async () => {
   databaseMock.getVlessProfile.mockReset();
   databaseMock.recordSubscriptionDelivery.mockReset();
   runtimeMock.syncGatewayClientTrafficUsage.mockReset();
+  runtimeMock.enforceGatewayTrafficQuotas.mockReset();
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))));
 });
 

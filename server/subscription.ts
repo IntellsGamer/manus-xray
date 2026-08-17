@@ -6,7 +6,7 @@ import {
   recordSubscriptionDelivery,
 } from "./db";
 import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSubscriptionPayload } from "./vless";
-import { syncGatewayClientTrafficUsage } from "./xrayRuntime";
+import { enforceGatewayTrafficQuotas, syncGatewayClientTrafficUsage } from "./xrayRuntime";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 
@@ -73,12 +73,17 @@ async function serveSubscription(req: Request, res: Response) {
     return;
   }
 
-  const client = await getGatewayClientBySubscriptionToken(token);
+  let client = await getGatewayClientBySubscriptionToken(token);
+  const gatewayForEnforcement = await getVlessProfile();
+  if (client && gatewayForEnforcement) {
+    await enforceGatewayTrafficQuotas(gatewayForEnforcement);
+    client = await getGatewayClientBySubscriptionToken(token);
+  }
   if (!client || !client.enabled || (client.expiresAt && client.expiresAt.getTime() <= Date.now())) {
     res.status(404).type("text/plain").send("Not found");
     return;
   }
-  const gateway = await getVlessProfile();
+  const gateway = gatewayForEnforcement;
   if (!gateway) {
     res.status(503).type("text/plain").send("Gateway unavailable");
     return;

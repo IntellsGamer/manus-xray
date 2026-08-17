@@ -71,3 +71,11 @@
 - [x] Create a real temporary 1 MB client through the owner client-management flow, verify its actual subscription and availability state, then permanently delete it without modifying existing clients.
 - [x] Replace the blue-tinted dark theme with neutral graphite surfaces, high-contrast typography, restrained borders, and monochrome interaction states while preserving the light theme.
 - [x] Make Gateway connection details, code panes, QR actions, and protocol route controls consistently theme-aware in both light and dark modes.
+- [ ] Disable a client non-destructively when its measured traffic reaches its finite quota and regenerate the active Xray configuration.
+- [ ] Track and force-close active WebSocket bridge tunnels associated with a client when that client is disabled or quota-exhausted.
+- [ ] Add request-triggered and platform-managed recurring best-effort quota checks without changing the current hosting mode.
+- [ ] Expose quota-exhaustion status in client management and add isolated enforcement regression coverage.
+- [ ] Validate a quota-hit temporary client is disconnected and disabled without modifying existing client records.
+- [ ] Raise the neutral dark theme from near-black to comfortable charcoal surfaces while preserving contrast and light-mode styling.
+- [ ] Keep each client’s storage and day-limit editor collapsed by default while retaining an on-demand edit control.
+- [ ] Complete quota enforcement using only the existing WebDev application and available schedule paths, with no persistent computer or hosting change.

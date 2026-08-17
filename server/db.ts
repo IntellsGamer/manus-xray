@@ -328,10 +328,13 @@ export async function deleteGatewayClient(id: number) {
 export async function updateGatewayClientPolicy(id: number, input: { trafficLimitBytes: number; dayLimit: number }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
+  const existing = await getGatewayClientById(id);
+  if (!existing) throw new Error("Gateway client was not found");
   await db.update(gatewayClients).set({
     trafficLimitBytes: input.trafficLimitBytes,
     dayLimit: input.dayLimit,
     expiresAt: input.dayLimit > 0 ? new Date(Date.now() + input.dayLimit * 86_400_000) : null,
+    quotaExhaustedAt: input.trafficLimitBytes < 0 || input.trafficLimitBytes > existing.trafficUsedBytes ? null : existing.quotaExhaustedAt,
   }).where(eq(gatewayClients.id, id));
   const client = await getGatewayClientById(id);
   if (!client) throw new Error("Gateway client was not found");
@@ -350,6 +353,28 @@ export async function recordGatewayClientTrafficUsage(client: GatewayClient, rep
     trafficStatsSnapshotBytes: reported,
   }).where(eq(gatewayClients.id, client.id));
   return trafficUsedBytes;
+}
+
+export async function disableGatewayClientForQuota(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayClients).set({ enabled: false, quotaExhaustedAt: new Date() }).where(eq(gatewayClients.id, id));
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found");
+  return client;
+}
+
+export async function getVlessProfileByQuotaScheduleTaskUid(taskUid: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.select().from(vlessProfiles).where(eq(vlessProfiles.quotaScheduleTaskUid, taskUid)).limit(1);
+  return result[0];
+}
+
+export async function setVlessProfileQuotaScheduleTaskUid(taskUid: string | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(vlessProfiles).set({ quotaScheduleTaskUid: taskUid }).where(eq(vlessProfiles.id, 1));
 }
 
 export async function recordSubscriptionDelivery(input: { profileKind: "global" | "client"; clientId?: number; deliveryKind: "browser" | "proxy"; userAgent?: string }) {

@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { registerSubscriptionRoute } from "../subscription";
+import { registerQuotaEnforcementRoute } from "../quotaEnforcement";
 import { getVlessProfile } from "../db";
 import { applyXrayProfile, stopXrayRuntime } from "../xrayRuntime";
 import { registerVlessUpgradeProxy } from "../vlessUpgradeProxy";
@@ -41,6 +42,7 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerSubscriptionRoute(app);
+  registerQuotaEnforcementRoute(app);
   // tRPC API
   app.use(
     "/api/trpc",

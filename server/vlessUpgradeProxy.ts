@@ -4,7 +4,7 @@ import type { Duplex } from "stream";
 import type { VlessProfile } from "../drizzle/schema";
 import { getVlessProfile } from "./db";
 import { internalInboundForPath, normaliseWsPath } from "./vless";
-import { applyXrayProfile, xrayInternalPort } from "./xrayRuntime";
+import { applyXrayProfile, enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
 
 type UpgradeDependencies = {
   getProfile?: () => Promise<VlessProfile | undefined>;
@@ -43,6 +43,7 @@ async function bridgeUpgrade(
     socket.destroy();
     return;
   }
+  await enforceGatewayTrafficQuotas(profile);
   await dependencies.applyProfile(profile);
   const upstream = net.createConnection({ host: "127.0.0.1", port: internalPort });
   const connectTimeout = setTimeout(() => closeSockets(socket, upstream), 5000);

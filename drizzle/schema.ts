@@ -45,6 +45,7 @@ export const vlessProfiles = mysqlTable("vless_profiles", {
   socksPassword: varchar("socksPassword", { length: 64 }).notNull().default(""),
   socksWsPath: varchar("socksWsPath", { length: 255 }).notNull().default("/socks"),
   globalProfileEnabled: boolean("globalProfileEnabled").notNull().default(true),
+  quotaScheduleTaskUid: varchar("quotaScheduleTaskUid", { length: 65 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -66,6 +67,7 @@ export const gatewayClients = mysqlTable("gateway_clients", {
   trafficLimitBytes: bigint("trafficLimitBytes", { mode: "number" }).notNull().default(-1),
   trafficUsedBytes: bigint("trafficUsedBytes", { mode: "number" }).notNull().default(0),
   trafficStatsSnapshotBytes: bigint("trafficStatsSnapshotBytes", { mode: "number" }).notNull().default(0),
+  quotaExhaustedAt: timestamp("quotaExhaustedAt"),
   dayLimit: int("dayLimit").notNull().default(-1),
   expiresAt: timestamp("expiresAt"),
   lastSubscriptionAt: timestamp("lastSubscriptionAt"),
