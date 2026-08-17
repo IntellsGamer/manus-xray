@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { buildClientConnectionDetails, buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXrayConfig, normaliseGatewayPaths, normaliseWsPath } from "./vless";
+import { buildClientConnectionDetails, buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXrayConfig, clientWebSocketPaths, normaliseGatewayPaths, normaliseWsPath, resolvePublicGatewayRoute } from "./vless";
 
 const profile: VlessProfile = {
   id: 1,
@@ -32,6 +32,11 @@ const namedClient: GatewayClient = {
   socksUsername: "client-test-device",
   socksPassword: "named-socks-password",
   subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  connectionToken: "named-client-route-token",
+  trafficLimitBytes: -1,
+  trafficUsedBytes: 0,
+  trafficStatsSnapshotBytes: 0,
+  quotaExhaustedAt: null,
   expiresAt: null,
   lastSubscriptionAt: null,
   subscriptionDeliveryCount: 0,
@@ -54,7 +59,7 @@ describe("VLESS profile serialization", () => {
     expect(parsed.searchParams.get("path")).toBe("/vless");
     const subscriptionLines = Buffer.from(buildSubscriptionPayload(profile), "base64").toString("utf8").split("\n");
     expect(subscriptionLines).toHaveLength(3);
-    expect(subscriptionLines[0]).toBe(uri);
+    expect(new URL(subscriptionLines[0] || "").searchParams.get("path")).toBe(`/vless/${profile.subscriptionToken}`);
     expect(subscriptionLines[1]).toMatch(/^vmess:\/\//);
     expect(subscriptionLines[2]).toMatch(/^trojan:\/\//);
   });
@@ -98,11 +103,28 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[2]?.settings.clients).toEqual([{ password: namedClient.trojanPassword, email: `gateway-client-${namedClient.id}-trojan@local.invalid`, level: 0 }]);
     expect(config.inbounds[3]?.settings.accounts).toEqual([{ user: namedClient.socksUsername, pass: namedClient.socksPassword }]);
     expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
+    expect(new URL(clientDetails.vlessUri).searchParams.get("path")).toBe("/vless/named-client-route-token");
+    expect(JSON.parse(Buffer.from(clientDetails.vmessUri.replace("vmess://", ""), "base64").toString("utf8")).path).toBe("/vmess/named-client-route-token");
+    expect(new URL(clientDetails.trojanUri).searchParams.get("path")).toBe("/trojan/named-client-route-token");
     expect(clientDetails.vmessUri).toContain(Buffer.from(namedClient.vmessUuid).toString("base64").slice(0, 0));
     expect(clientDetails.trojanUri).toContain(encodeURIComponent(namedClient.trojanPassword));
   });
 
   it("rejects colliding protocol paths after normalization", () => {
     expect(() => normaliseGatewayPaths({ wsPath: "shared", vmessWsPath: "/shared", trojanWsPath: "/trojan", socksWsPath: "/socks" })).toThrow("different WebSocket path");
+  });
+
+  it("maps a named client’s opaque public routes to the existing private Xray protocol path and port", () => {
+    const paths = clientWebSocketPaths(profile, namedClient);
+    const route = resolvePublicGatewayRoute(profile, 10000, [namedClient], paths.vless);
+
+    expect(paths).toEqual({
+      vless: "/vless/named-client-route-token",
+      vmess: "/vmess/named-client-route-token",
+      trojan: "/trojan/named-client-route-token",
+      socks: "/socks/named-client-route-token",
+    });
+    expect(route).toMatchObject({ protocol: "vless", internalPath: "/vless", port: 10000, client: { id: namedClient.id } });
+    expect(resolvePublicGatewayRoute(profile, 10000, [namedClient], "/vless/unknown-route")).toBeUndefined();
   });
 });

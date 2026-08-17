@@ -87,3 +87,10 @@
 - [x] Diagnose and correct the anomalous high usage recorded for the affected named client without altering that client’s credentials or policy.
 - [x] Add deterministic regression coverage proving VLESS, VMess, and Trojan counters for one client are attributed separately and summed only once.
 - [x] Verify the affected client’s live post-fix Xray counter behavior after protocol-specific runtime identities are deployed.
+- [ ] Diagnose and correct the remaining client quota overcount where a few megabytes of transfer can exhaust a 10 MB limit.
+- [ ] Add regression coverage for repeated live sampler calls across multiple application instances so a counter delta is persisted only once.
+- [ ] Verify the reported client’s quota usage and enabled state after the corrected live accounting path is deployed.
+- [ ] Replace shared protocol WebSocket paths for named clients with unique opaque per-client route suffixes while keeping Xray’s internal protocol paths unchanged.
+- [ ] Identify each incoming tunnel from its client-specific route and persist backend-measured bidirectional byte deltas atomically without parsing encrypted protocol UUIDs.
+- [ ] Regenerate all named-client connection details and subscriptions with client-specific paths, preserving global profile paths and collision protection.
+- [ ] Verify VLESS, VMess, Trojan, and SOCKS5 tunnel routing, accurate byte metering, quota disablement, and forced tunnel closure using client-specific routes.

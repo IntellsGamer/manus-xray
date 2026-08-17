@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   updateGatewayClientPolicy: vi.fn(),
   updateVlessProfile: vi.fn(),
   applyXrayProfile: vi.fn(),
-  getClientTrafficStats: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
@@ -50,7 +49,7 @@ vi.mock("./vless", () => ({
   normaliseWsPath: vi.fn((value: string) => value),
 }));
 
-vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile, getClientTrafficStats: mocks.getClientTrafficStats, enforceGatewayTrafficQuotas: vi.fn() }));
+vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile, enforceGatewayTrafficQuotas: vi.fn() }));
 
 import { vlessRouter } from "./routers/vless";
 
@@ -124,8 +123,7 @@ describe("client lifecycle mutations", () => {
     mocks.deleteGatewayClient.mockResolvedValue(undefined);
     mocks.applyXrayProfile.mockResolvedValue(undefined);
     mocks.getGatewayClientById.mockResolvedValue(storedClient);
-    mocks.getClientTrafficStats.mockResolvedValue(new Map([[storedClient.id, 12345]]));
-    mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 12345, quotaExhaustedAt: null });
+    mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, quotaExhaustedAt: null });
   });
 
   it("persists a valid traffic and day policy and returns the rendered quota state", async () => {
@@ -157,12 +155,11 @@ describe("client lifecycle mutations", () => {
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
   });
 
-  it("resets recorded usage against the current Xray counter baseline without changing client policy", async () => {
+  it("resets backend-recorded usage without changing client policy", async () => {
     const caller = vlessRouter.createCaller(adminContext());
     const result = await caller.resetClientUsage({ id: storedClient.id });
 
-    expect(mocks.getClientTrafficStats).toHaveBeenCalledWith([storedClient]);
-    expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id, 12345);
+    expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id);
     expect(result).toMatchObject({ id: storedClient.id, trafficUsedBytes: 0, trafficLimitBytes: -1, dayLimit: -1 });
   });
 });

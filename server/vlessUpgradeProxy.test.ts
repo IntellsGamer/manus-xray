@@ -80,7 +80,7 @@ describe("VLESS WebSocket upgrade bridge", () => {
     });
     const bridgePort = await listen(bridge);
 
-    await expect(upgrade(bridgePort, "/vless")).resolves.toMatchObject({ statusCode: 101 });
+    await expect(upgrade(bridgePort, `/vless/${profile.subscriptionToken}`)).resolves.toMatchObject({ statusCode: 101 });
     expect(applyProfile).toHaveBeenCalledWith(profile);
   });
 
@@ -97,5 +97,31 @@ describe("VLESS WebSocket upgrade bridge", () => {
     const result = await upgrade(bridgePort, "/not-vless");
     expect(result.error).toBeInstanceOf(Error);
     expect(applyProfile).not.toHaveBeenCalled();
+  });
+
+  it("rewrites a named client route to the stable private VLESS inbound path", async () => {
+    const namedClient = {
+      id: 9,
+      enabled: true,
+      connectionToken: "named-client-route-token",
+      expiresAt: null,
+    } as unknown as import("../drizzle/schema").GatewayClient;
+    const upstream = createTcpServer(socket => {
+      socket.once("data", requestBytes => {
+        expect(requestBytes.toString()).toContain("GET /vless HTTP/1.1");
+        socket.write("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n");
+      });
+    });
+    const upstreamPort = await listen(upstream);
+    const bridge = createHttpServer((_request, response) => response.end("not found"));
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      getClients: async () => [namedClient],
+      applyProfile: vi.fn().mockResolvedValue(undefined),
+      internalPort: () => upstreamPort,
+    });
+    const bridgePort = await listen(bridge);
+
+    await expect(upgrade(bridgePort, "/vless/named-client-route-token")).resolves.toMatchObject({ statusCode: 101 });
   });
 });

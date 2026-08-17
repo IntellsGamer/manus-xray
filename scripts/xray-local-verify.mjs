@@ -45,6 +45,7 @@ const temporaryQuotaClient = {
   socksUsername: "temporary-quota-client",
   socksPassword: "temporary-quota-socks-password",
   subscriptionToken: "temporary_quota_validation_token_00",
+  connectionToken: "temporary-quota-route-token",
   trafficLimitBytes: 1024 * 1024,
   trafficUsedBytes: 0,
   trafficStatsSnapshotBytes: 0,
@@ -171,7 +172,7 @@ async function main() {
     outbounds: [{
       protocol: "vless",
       settings: { vnext: [{ address: "127.0.0.1", port: bridgePort, users: [{ id: temporaryQuotaClient.vlessUuid, encryption: "none" }] }] },
-      streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vless" } },
+      streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vless/temporary-quota-route-token" } },
     }],
   }, null, 2)}\n`);
   const remoteSocksConfig = JSON.parse(buildSocksClientConfig(profile));
@@ -179,6 +180,7 @@ async function main() {
   remoteSocksConfig.outbounds[0].settings.servers[0].address = "127.0.0.1";
   remoteSocksConfig.outbounds[0].settings.servers[0].port = bridgePort;
   remoteSocksConfig.outbounds[0].streamSettings.security = "none";
+  remoteSocksConfig.outbounds[0].streamSettings.wsSettings.path = "/socks/temporary-quota-route-token";
   delete remoteSocksConfig.outbounds[0].streamSettings.tlsSettings;
   delete remoteSocksConfig.outbounds[0].streamSettings.wsSettings.headers;
   await writeFile(remoteSocksClientConfigPath, `${JSON.stringify(remoteSocksConfig, null, 2)}\n`);
@@ -188,7 +190,7 @@ async function main() {
     outbounds: [{
       protocol: "vmess",
       settings: { address: "127.0.0.1", port: bridgePort, id: profile.vmessUuid, security: "none", level: 0 },
-      streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vmess" } },
+      streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vmess/temporary-quota-route-token" } },
     }],
   };
   await writeFile(vmessClientConfigPath, `${JSON.stringify(vmessSocksConfig, null, 2)}\n`);
@@ -197,6 +199,7 @@ async function main() {
   directVmessConfig.outbounds[0].settings.address = "127.0.0.1";
   directVmessConfig.outbounds[0].settings.port = serverPort + 1;
   directVmessConfig.outbounds[0].streamSettings.security = "none";
+  directVmessConfig.outbounds[0].streamSettings.wsSettings.path = "/vmess";
   delete directVmessConfig.outbounds[0].streamSettings.tlsSettings;
   delete directVmessConfig.outbounds[0].streamSettings.wsSettings.headers;
   await writeFile(directVmessClientConfigPath, `${JSON.stringify(directVmessConfig, null, 2)}\n`);
@@ -222,6 +225,7 @@ async function main() {
     });
     registerVlessUpgradeProxy(bridge, {
       getProfile: async () => profile,
+      getClients: async () => [temporaryQuotaClient],
       applyProfile: async () => undefined,
       internalPort: () => serverPort,
     });
@@ -229,8 +233,8 @@ async function main() {
       bridge.once("error", rejectListen);
       bridge.listen(bridgePort, "127.0.0.1", resolveListen);
     });
-    await assertWebSocketHandshake(bridgePort);
-    await assertWebSocketHandshake(bridgePort, "/vmess");
+    await assertWebSocketHandshake(bridgePort, "/vless/temporary-quota-route-token");
+    await assertWebSocketHandshake(bridgePort, "/vmess/temporary-quota-route-token");
     client = startXray(clientConfigPath, resolve(workDir, "client.log"));
     await waitForPort(socksPort);
     vmessClient = startXray(vmessClientConfigPath, resolve(workDir, "vmess-client.log"));

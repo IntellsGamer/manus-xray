@@ -30,6 +30,35 @@ export function normaliseGatewayPaths(paths: { wsPath: string; vmessWsPath: stri
   return normalized;
 }
 
+export type GatewayProtocol = "vless" | "vmess" | "trojan" | "socks";
+
+function routeWithConnectionToken(basePath: string, connectionToken: string) {
+  return `${normaliseWsPath(basePath).replace(/\/+$/, "")}/${connectionToken}`;
+}
+
+export function clientWebSocketPaths(profile: VlessProfile, client: Pick<GatewayClient, "connectionToken">) {
+  return {
+    vless: routeWithConnectionToken(profile.wsPath, client.connectionToken),
+    vmess: routeWithConnectionToken(profile.vmessWsPath, client.connectionToken),
+    trojan: routeWithConnectionToken(profile.trojanWsPath, client.connectionToken),
+    socks: routeWithConnectionToken(profile.socksWsPath, client.connectionToken),
+  };
+}
+
+export function gatewayWebSocketPaths(profile: VlessProfile) {
+  return {
+    vless: routeWithConnectionToken(profile.wsPath, profile.subscriptionToken),
+    vmess: routeWithConnectionToken(profile.vmessWsPath, profile.subscriptionToken),
+    trojan: routeWithConnectionToken(profile.trojanWsPath, profile.subscriptionToken),
+    socks: routeWithConnectionToken(profile.socksWsPath, profile.subscriptionToken),
+  };
+}
+
+function publicGatewayProfile(profile: VlessProfile): VlessProfile {
+  const paths = gatewayWebSocketPaths(profile);
+  return { ...profile, wsPath: paths.vless, vmessWsPath: paths.vmess, trojanWsPath: paths.trojan, socksWsPath: paths.socks };
+}
+
 export function buildVlessUri(profile: VlessProfile) {
   const endpoint = new URL(`vless://${profile.uuid}@${profile.serverAddress}:${profile.port}`);
   endpoint.searchParams.set("encryption", "none");
@@ -112,6 +141,7 @@ export function buildSocksClientConfig(profile: VlessProfile) {
 }
 
 function profileForClient(profile: VlessProfile, client: GatewayClient): VlessProfile {
+  const paths = clientWebSocketPaths(profile, client);
   return {
     ...profile,
     uuid: client.vlessUuid,
@@ -120,6 +150,10 @@ function profileForClient(profile: VlessProfile, client: GatewayClient): VlessPr
     socksUsername: client.socksUsername,
     socksPassword: client.socksPassword,
     subscriptionToken: client.subscriptionToken,
+    wsPath: paths.vless,
+    vmessWsPath: paths.vmess,
+    trojanWsPath: paths.trojan,
+    socksWsPath: paths.socks,
   };
 }
 
@@ -130,6 +164,16 @@ export function buildClientConnectionDetails(profile: VlessProfile, client: Gate
     vmessUri: buildVmessUri(clientProfile),
     trojanUri: buildTrojanUri(clientProfile),
     socksClientConfig: buildSocksClientConfig(clientProfile),
+  };
+}
+
+export function buildGatewayConnectionDetails(profile: VlessProfile) {
+  const publicProfile = publicGatewayProfile(profile);
+  return {
+    vlessUri: buildVlessUri(publicProfile),
+    vmessUri: buildVmessUri(publicProfile),
+    trojanUri: buildTrojanUri(publicProfile),
+    socksClientConfig: buildSocksClientConfig(publicProfile),
   };
 }
 
@@ -145,7 +189,8 @@ export function clientTrafficEmail(clientId: number, protocol: TrafficProtocol =
 }
 
 export function buildSubscriptionPayload(profile: VlessProfile) {
-  return Buffer.from([buildVlessUri(profile), buildVmessUri(profile), buildTrojanUri(profile)].join("\n"), "utf8").toString("base64");
+  const details = buildGatewayConnectionDetails(profile);
+  return Buffer.from([details.vlessUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
 }
 
 export function internalInboundForPath(profile: VlessProfile, internalBasePort: number, path: string) {
@@ -157,6 +202,28 @@ export function internalInboundForPath(profile: VlessProfile, internalBasePort: 
     { path: normaliseWsPath(profile.socksWsPath), port: internalBasePort + 3 },
   ];
   return mapping.find(candidate => candidate.path === normalizedPath)?.port;
+}
+
+export function resolvePublicGatewayRoute(profile: VlessProfile, internalBasePort: number, clients: GatewayClient[], path: string) {
+  const normalizedPath = normaliseWsPath(path);
+  const mappings: Array<{ protocol: GatewayProtocol; internalPath: string; port: number }> = [
+    { protocol: "vless", internalPath: normaliseWsPath(profile.wsPath), port: internalBasePort },
+    { protocol: "vmess", internalPath: normaliseWsPath(profile.vmessWsPath), port: internalBasePort + 1 },
+    { protocol: "trojan", internalPath: normaliseWsPath(profile.trojanWsPath), port: internalBasePort + 2 },
+    { protocol: "socks", internalPath: normaliseWsPath(profile.socksWsPath), port: internalBasePort + 3 },
+  ];
+  const gatewayPaths = gatewayWebSocketPaths(profile);
+  for (const mapping of mappings) {
+    if (normalizedPath === gatewayPaths[mapping.protocol]) return { ...mapping, client: undefined };
+  }
+  const activeClients = clients.filter(client => client.enabled && (!client.expiresAt || client.expiresAt.getTime() > Date.now()));
+  for (const client of activeClients) {
+    const paths = clientWebSocketPaths(profile, client);
+    for (const mapping of mappings) {
+      if (normalizedPath === paths[mapping.protocol]) return { ...mapping, client };
+    }
+  }
+  return undefined;
 }
 
 /**

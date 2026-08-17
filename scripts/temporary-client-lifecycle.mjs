@@ -1,5 +1,5 @@
 import { ENV } from "../server/_core/env.ts";
-import { getGatewayClientById, getUserByOpenId, getVlessProfile, recordGatewayClientTrafficUsage } from "../server/db.ts";
+import { getGatewayClientById, getUserByOpenId, getVlessProfile, recordGatewayClientTunnelTraffic } from "../server/db.ts";
 import { vlessRouter } from "../server/routers/vless.ts";
 import { enforceGatewayTrafficQuotas } from "../server/xrayRuntime.ts";
 
@@ -35,19 +35,18 @@ async function main() {
     if (!payload.includes(created.connection.vlessUri)) throw new Error("Temporary subscription payload did not contain the generated VLESS import");
 
     const storedBeforeUsage = await getGatewayClientById(temporaryId);
-    if (!storedBeforeUsage) throw new Error("The temporary client could not be loaded for counter validation");
+    if (!storedBeforeUsage) throw new Error("The temporary client could not be loaded for backend traffic validation");
     await Promise.all([
-      recordGatewayClientTrafficUsage(storedBeforeUsage, 1024 * 1024),
-      recordGatewayClientTrafficUsage(storedBeforeUsage, 1024 * 1024),
+      recordGatewayClientTunnelTraffic(temporaryId, 512 * 1024),
+      recordGatewayClientTunnelTraffic(temporaryId, 512 * 1024),
     ]);
     const storedAfterUsage = await getGatewayClientById(temporaryId);
-    if (!storedAfterUsage || storedAfterUsage.trafficUsedBytes !== 1024 * 1024) throw new Error("Duplicate concurrent counter samples were not persisted as one 1 MB interval");
+    if (!storedAfterUsage || storedAfterUsage.trafficUsedBytes !== 1024 * 1024) throw new Error("Concurrent backend tunnel deltas were not persisted as exactly one 1 MB total");
 
     const profile = await getVlessProfile();
     if (!profile) throw new Error("Gateway profile is unavailable for quota enforcement validation");
     const enforcement = await enforceGatewayTrafficQuotas(profile, {
       listClients: async () => [storedAfterUsage],
-      syncUsage: async () => new Map([[temporaryId, 1024 * 1024]]),
     });
     if (!enforcement.disabledClientIds.includes(temporaryId)) throw new Error("Quota-hit temporary client was not disabled");
     const disabled = await getGatewayClientById(temporaryId);
@@ -62,7 +61,7 @@ async function main() {
   if (after.some(client => client.id === temporaryId) || existingIds.size !== after.length || after.some(client => !existingIds.has(client.id))) {
     throw new Error("Temporary client cleanup did not preserve the original client set");
   }
-  console.log("Real temporary 1 MB client creation, atomic counter validation, quota disablement, subscription rejection, permanent deletion, and existing-client preservation passed.");
+  console.log("Real temporary 1 MB client creation, atomic backend tunnel-byte validation, quota disablement, subscription rejection, permanent deletion, and existing-client preservation passed.");
   process.exit(0);
 }
 

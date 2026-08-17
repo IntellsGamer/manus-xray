@@ -64,6 +64,7 @@ export const gatewayClients = mysqlTable("gateway_clients", {
   socksUsername: varchar("socksUsername", { length: 64 }).notNull().unique(),
   socksPassword: varchar("socksPassword", { length: 64 }).notNull(),
   subscriptionToken: varchar("subscriptionToken", { length: 96 }).notNull().unique(),
+  connectionToken: varchar("connectionToken", { length: 64 }).notNull().unique(),
   trafficLimitBytes: bigint("trafficLimitBytes", { mode: "number" }).notNull().default(-1),
   trafficUsedBytes: bigint("trafficUsedBytes", { mode: "number" }).notNull().default(0),
   trafficStatsSnapshotBytes: bigint("trafficStatsSnapshotBytes", { mode: "number" }).notNull().default(0),

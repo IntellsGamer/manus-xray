@@ -5,7 +5,7 @@ import { ChildProcess, execFile, spawn } from "child_process";
 import { promisify } from "util";
 import net from "net";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { disableGatewayClientForQuota, listGatewayClients, recordGatewayClientTrafficUsage } from "./db";
+import { disableGatewayClientForQuota, listGatewayClients } from "./db";
 import { buildXrayConfig, clientTrafficEmail, type TrafficProtocol } from "./vless";
 import { closeActiveGatewayTunnels } from "./gatewayTunnels";
 
@@ -64,25 +64,13 @@ export async function getClientTrafficStats(clients: Pick<GatewayClient, "id">[]
   }
 }
 
-export async function syncGatewayClientTrafficUsage(clients: GatewayClient[]) {
-  const counters = await getClientTrafficStats(clients);
-  if (!counters) return null;
-  const usage = new Map<number, number>();
-  for (const client of clients) {
-    usage.set(client.id, await recordGatewayClientTrafficUsage(client, counters.get(client.id) || 0));
-  }
-  return usage;
-}
-
 /**
- * Samples Xray's per-user counters and disables only clients whose finite
- * stored quota has been reached. Applying the rebuilt profile restarts the
- * local Xray process, which closes any in-flight tunnels from the prior
- * configuration and prevents the disabled credentials from reconnecting.
+ * Disables only clients whose backend-measured finite quota has been reached.
+ * Applying the rebuilt profile restarts the local Xray process, which closes
+ * in-flight tunnels and prevents the disabled credentials from reconnecting.
  */
 type QuotaEnforcementDependencies = {
   listClients?: () => Promise<GatewayClient[]>;
-  syncUsage?: (clients: GatewayClient[]) => Promise<Map<number, number> | null>;
   disableClient?: (id: number) => Promise<GatewayClient>;
   applyProfile?: (profile: VlessProfile) => Promise<unknown>;
   closeTunnels?: () => number;
@@ -90,20 +78,13 @@ type QuotaEnforcementDependencies = {
 
 export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrides: QuotaEnforcementDependencies = {}) {
   const listClients = overrides.listClients ?? listGatewayClients;
-  const syncUsage = overrides.syncUsage ?? syncGatewayClientTrafficUsage;
   const disableClient = overrides.disableClient ?? disableGatewayClientForQuota;
   const applyProfile = overrides.applyProfile ?? applyXrayProfile;
   const closeTunnels = overrides.closeTunnels ?? closeActiveGatewayTunnels;
   const clients = await listClients();
-  const usage = await syncUsage(clients);
-  if (!usage) {
-    await applyProfile(profile);
-    return { trafficUsageAvailable: false, disabledClientIds: [] as number[] };
-  }
-
   const exhausted = clients.filter(client => {
     if (!client.enabled || client.trafficLimitBytes < 0) return false;
-    return (usage.get(client.id) ?? client.trafficUsedBytes) >= client.trafficLimitBytes;
+    return client.trafficUsedBytes >= client.trafficLimitBytes;
   });
   if (exhausted.length === 0) {
     await applyProfile(profile);

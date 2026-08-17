@@ -5,8 +5,8 @@ import {
   getVlessProfileBySubscriptionToken,
   recordSubscriptionDelivery,
 } from "./db";
-import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSubscriptionPayload } from "./vless";
-import { enforceGatewayTrafficQuotas, syncGatewayClientTrafficUsage } from "./xrayRuntime";
+import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSubscriptionPayload, clientWebSocketPaths, gatewayWebSocketPaths } from "./vless";
+import { enforceGatewayTrafficQuotas } from "./xrayRuntime";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 
@@ -27,10 +27,8 @@ function formatBytes(bytes: number) {
 
 function quotaCards(quota: { trafficLimitBytes: number; trafficUsedBytes: number; trafficUsageAvailable: boolean; dayLimit: number; expiresAt?: Date | null }) {
   const data = quota.trafficLimitBytes < 0
-    ? { title: "Unlimited", detail: quota.trafficUsageAvailable ? `${formatBytes(quota.trafficUsedBytes)} used` : "Traffic sampler awaiting data" }
-    : quota.trafficUsageAvailable
-      ? { title: `${formatBytes(Math.max(0, quota.trafficLimitBytes - quota.trafficUsedBytes))} left`, detail: `${formatBytes(quota.trafficUsedBytes)} / ${formatBytes(quota.trafficLimitBytes)} used` }
-      : { title: formatBytes(quota.trafficLimitBytes), detail: "Traffic sampler awaiting data" };
+    ? { title: "Unlimited", detail: `${formatBytes(quota.trafficUsedBytes)} used` }
+    : { title: `${formatBytes(Math.max(0, quota.trafficLimitBytes - quota.trafficUsedBytes))} left`, detail: `${formatBytes(quota.trafficUsedBytes)} / ${formatBytes(quota.trafficLimitBytes)} used` };
   const days = quota.dayLimit < 0
     ? { title: "Unlimited", detail: "No expiry policy" }
     : quota.expiresAt
@@ -64,7 +62,7 @@ async function serveSubscription(req: Request, res: Response) {
     if (browser) {
       res.status(200).set("Cache-Control", "no-store, max-age=0").type("text/html; charset=utf-8").send(statusPage({
         name: "Global gateway profile", enabled: true,
-        paths: [profile.wsPath, profile.vmessWsPath, profile.trojanWsPath, profile.socksWsPath],
+        paths: Object.values(gatewayWebSocketPaths(profile)),
       }));
       return;
     }
@@ -87,16 +85,15 @@ async function serveSubscription(req: Request, res: Response) {
     res.status(503).type("text/plain").send("Gateway unavailable");
     return;
   }
-  const trafficUsage = await syncGatewayClientTrafficUsage([client]);
-  const trafficUsedBytes = trafficUsage?.get(client.id) ?? client.trafficUsedBytes;
   await recordSubscriptionDelivery({ profileKind: "client", clientId: client.id, deliveryKind: browser ? "browser" : "proxy", userAgent });
   if (browser) {
     const details = buildClientConnectionDetails(gateway, client);
+    const paths = clientWebSocketPaths(gateway, client);
     res.status(200).set("Cache-Control", "no-store, max-age=0").type("text/html; charset=utf-8").send(statusPage({
       name: client.name, enabled: client.enabled,
-      paths: [gateway.wsPath, gateway.vmessWsPath, gateway.trojanWsPath, gateway.socksWsPath],
+      paths: [paths.vless, paths.vmess, paths.trojan, paths.socks],
       imports: [details.vlessUri, details.vmessUri, details.trojanUri],
-      quota: { trafficLimitBytes: client.trafficLimitBytes, trafficUsedBytes, trafficUsageAvailable: trafficUsage !== null, dayLimit: client.dayLimit, expiresAt: client.expiresAt },
+      quota: { trafficLimitBytes: client.trafficLimitBytes, trafficUsedBytes: client.trafficUsedBytes, trafficUsageAvailable: true, dayLimit: client.dayLimit, expiresAt: client.expiresAt },
     }));
     return;
   }

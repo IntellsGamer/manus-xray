@@ -21,7 +21,7 @@ describe("Xray client traffic counters", () => {
 
   it("disables only enabled clients whose measured finite quota is exhausted, then applies the refreshed profile", async () => {
     const clients = [
-      { id: 1, enabled: true, trafficLimitBytes: 1024, trafficUsedBytes: 0 },
+      { id: 1, enabled: true, trafficLimitBytes: 1024, trafficUsedBytes: 1024 },
       { id: 2, enabled: true, trafficLimitBytes: -1, trafficUsedBytes: 0 },
       { id: 3, enabled: false, trafficLimitBytes: 1024, trafficUsedBytes: 0 },
     ] as GatewayClient[];
@@ -30,7 +30,6 @@ describe("Xray client traffic counters", () => {
     const closeTunnels = vi.fn().mockReturnValue(1);
     const result = await enforceGatewayTrafficQuotas({ id: 1 } as VlessProfile, {
       listClients: vi.fn().mockResolvedValue(clients),
-      syncUsage: vi.fn().mockResolvedValue(new Map([[1, 1024], [2, 50], [3, 1024]])),
       disableClient,
       applyProfile,
       closeTunnels,

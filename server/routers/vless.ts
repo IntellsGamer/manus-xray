@@ -18,8 +18,8 @@ import {
   updateVlessProfile,
 } from "../db";
 import { adminProcedure, router } from "../_core/trpc";
-import { buildClientConnectionDetails, buildSocksClientConfig, buildTrojanUri, buildVlessUri, buildVmessUri, normaliseWsPath } from "../vless";
-import { applyXrayProfile, enforceGatewayTrafficQuotas, getClientTrafficStats, getXrayRuntimeStatus } from "../xrayRuntime";
+import { buildClientConnectionDetails, buildGatewayConnectionDetails, normaliseWsPath } from "../vless";
+import { applyXrayProfile, enforceGatewayTrafficQuotas, getXrayRuntimeStatus } from "../xrayRuntime";
 
 const profileInput = z.object({
   serverAddress: z.string().trim().min(1).max(255),
@@ -48,6 +48,7 @@ async function profileForRequest(headers: Record<string, string | string[] | und
 }
 
 function presentProfile(profile: Awaited<ReturnType<typeof ensureVlessProfile>>) {
+  const connection = buildGatewayConnectionDetails(profile);
   return {
     uuid: profile.uuid,
     serverAddress: profile.serverAddress,
@@ -58,10 +59,10 @@ function presentProfile(profile: Awaited<ReturnType<typeof ensureVlessProfile>>)
     socksWsPath: profile.socksWsPath,
     tlsEnabled: profile.tlsEnabled,
     globalProfileEnabled: profile.globalProfileEnabled,
-    vlessUri: buildVlessUri(profile),
-    vmess: { uuid: profile.vmessUuid, wsPath: profile.vmessWsPath, uri: buildVmessUri(profile) },
-    trojan: { wsPath: profile.trojanWsPath, uri: buildTrojanUri(profile) },
-    socks5: { username: profile.socksUsername, wsPath: profile.socksWsPath, clientConfig: buildSocksClientConfig(profile) },
+    vlessUri: connection.vlessUri,
+    vmess: { uuid: profile.vmessUuid, wsPath: profile.vmessWsPath, uri: connection.vmessUri },
+    trojan: { wsPath: profile.trojanWsPath, uri: connection.trojanUri },
+    socks5: { username: profile.socksUsername, wsPath: profile.socksWsPath, clientConfig: connection.socksClientConfig },
     subscriptionPath: `/sub/${profile.subscriptionToken}`,
     updatedAt: profile.updatedAt,
   };
@@ -173,9 +174,7 @@ export const vlessRouter = router({
     const profile = await profileForRequest(ctx.req.headers);
     const client = await getGatewayClientById(input.id);
     if (!client) throw new Error("Gateway client was not found");
-    const counters = await getClientTrafficStats([client]);
-    if (!counters) throw new Error("Traffic sampler is unavailable; usage was not reset");
-    const reset = await resetGatewayClientTrafficUsage(input.id, counters.get(input.id) || 0);
+    const reset = await resetGatewayClientTrafficUsage(input.id);
     return presentClient(profile, reset, true);
   }),
 });
