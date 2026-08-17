@@ -1,14 +1,16 @@
 import { createHash } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import { dirname, resolve } from "path";
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess, execFile, spawn } from "child_process";
+import { promisify } from "util";
 import net from "net";
-import type { VlessProfile } from "../drizzle/schema";
-import { listGatewayClients } from "./db";
-import { buildXrayConfig } from "./vless";
+import type { GatewayClient, VlessProfile } from "../drizzle/schema";
+import { listGatewayClients, recordGatewayClientTrafficUsage } from "./db";
+import { buildXrayConfig, clientTrafficEmail } from "./vless";
 
 let runningProcess: ChildProcess | undefined;
 let runningConfigHash: string | undefined;
+const execFileAsync = promisify(execFile);
 
 const xrayBinary = () => process.env.XRAY_BINARY_PATH || "xray";
 const xrayConfigPath = () => resolve(process.env.XRAY_CONFIG_PATH || "/tmp/xray/config.json");
@@ -20,6 +22,55 @@ export const xrayInternalPort = () => {
   }
   return configured;
 };
+
+export const xrayStatsPort = () => xrayInternalPort() + 10;
+
+export function getXrayRuntimeStatus() {
+  const enabled = runtimeEnabled();
+  const running = Boolean(runningProcess && runningProcess.exitCode === null && !runningProcess.killed);
+  return { enabled, running, statsAvailable: enabled && running };
+}
+
+function safeCounter(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.min(parsed, Number.MAX_SAFE_INTEGER) : 0;
+}
+
+export function parseClientTrafficStats(payload: string, clients: Pick<GatewayClient, "id">[]) {
+  const totals = new Map<number, number>();
+  const emailToId = new Map(clients.map(client => [clientTrafficEmail(client.id), client.id]));
+  const parsed = JSON.parse(payload) as { stat?: Array<{ name?: unknown; value?: unknown }> };
+  for (const entry of parsed.stat || []) {
+    if (typeof entry.name !== "string") continue;
+    const match = /^user>>>([^>]+)>>>traffic>>>(uplink|downlink)$/.exec(entry.name);
+    if (!match) continue;
+    const clientId = emailToId.get(match[1]);
+    if (!clientId) continue;
+    totals.set(clientId, (totals.get(clientId) || 0) + safeCounter(entry.value));
+  }
+  return totals;
+}
+
+export async function getClientTrafficStats(clients: Pick<GatewayClient, "id">[]) {
+  if (!runtimeEnabled() || !runningProcess || runningProcess.exitCode !== null || clients.length === 0) return null;
+  try {
+    const { stdout } = await execFileAsync(xrayBinary(), ["api", "statsquery", `--server=127.0.0.1:${xrayStatsPort()}`, "-pattern", "user>>>"] , { timeout: 1500, maxBuffer: 512 * 1024 });
+    return parseClientTrafficStats(stdout, clients);
+  } catch (error) {
+    console.warn("[Xray] Unable to query local client traffic statistics:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+export async function syncGatewayClientTrafficUsage(clients: GatewayClient[]) {
+  const counters = await getClientTrafficStats(clients);
+  if (!counters) return null;
+  const usage = new Map<number, number>();
+  for (const client of clients) {
+    usage.set(client.id, await recordGatewayClientTrafficUsage(client, counters.get(client.id) || 0));
+  }
+  return usage;
+}
 
 async function configFor(profile: VlessProfile) {
   return buildXrayConfig(profile, xrayInternalPort(), await listGatewayClients());

@@ -77,8 +77,10 @@ const storedClient = {
   socksUsername: "client-socks-user",
   socksPassword: "client-socks-secret",
   subscriptionToken: "client-token",
-  trafficLimitBytes: 0,
-  dayLimit: 0,
+  trafficLimitBytes: -1,
+  trafficUsedBytes: 0,
+  trafficStatsSnapshotBytes: 0,
+  dayLimit: -1,
   expiresAt: null,
   subscriptionDeliveryCount: 0,
   lastSubscriptionAt: null,
@@ -134,7 +136,7 @@ describe("client lifecycle mutations", () => {
   it("rejects invalid quota and day-limit requests before persistence", async () => {
     const caller = vlessRouter.createCaller(adminContext());
 
-    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -1, dayLimit: 30 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -2, dayLimit: 30 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 0, dayLimit: 3651 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(mocks.updateGatewayClientPolicy).not.toHaveBeenCalled();
   });

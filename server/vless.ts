@@ -138,6 +138,10 @@ export function buildClientSubscriptionPayload(profile: VlessProfile, client: Ga
   return Buffer.from([details.vlessUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
 }
 
+export function clientTrafficEmail(clientId: number) {
+  return `gateway-client-${clientId}@local.invalid`;
+}
+
 export function buildSubscriptionPayload(profile: VlessProfile) {
   return Buffer.from([buildVlessUri(profile), buildVmessUri(profile), buildTrojanUri(profile)].join("\n"), "utf8").toString("base64");
 }
@@ -169,6 +173,9 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
   const globalClientEnabled = profile.globalProfileEnabled;
   return {
     log: { loglevel: "warning" },
+    stats: {},
+    policy: { levels: { "0": { statsUserUplink: true, statsUserDownlink: true } } },
+    api: { tag: "api", listen: `127.0.0.1:${internalPort + 10}`, services: ["StatsService"] },
     inbounds: [
       {
         tag: "vless-in",
@@ -178,7 +185,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         settings: {
           clients: [
             ...(globalClientEnabled ? [{ id: profile.uuid }] : []),
-            ...activeClients.map(client => ({ id: client.vlessUuid })),
+            ...activeClients.map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id), level: 0 })),
           ],
           decryption: "none",
         },
@@ -191,7 +198,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         protocol: "vmess",
         settings: { clients: [
           ...(globalClientEnabled ? [{ id: profile.vmessUuid, level: 0 }] : []),
-          ...activeClients.map(client => ({ id: client.vmessUuid, level: 0 })),
+          ...activeClients.map(client => ({ id: client.vmessUuid, email: clientTrafficEmail(client.id), level: 0 })),
         ] },
         streamSettings: streamSettings(profile.vmessWsPath),
       },
@@ -202,7 +209,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         protocol: "trojan",
         settings: { clients: [
           ...(globalClientEnabled ? [{ password: profile.trojanPassword }] : []),
-          ...activeClients.map(client => ({ password: client.trojanPassword })),
+          ...activeClients.map(client => ({ password: client.trojanPassword, email: clientTrafficEmail(client.id), level: 0 })),
         ] },
         streamSettings: streamSettings(profile.trojanWsPath),
       },

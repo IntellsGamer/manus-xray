@@ -35,6 +35,27 @@ const profile = {
   updatedAt: new Date(),
 };
 
+const temporaryQuotaClient = {
+  id: 99,
+  name: "Temporary 1 MB quota validation",
+  enabled: true,
+  vlessUuid: "2f2c37ad-5b4c-4f70-90cc-0eb2d4d2b3ca",
+  vmessUuid: "d9f5c469-3905-4796-b0f5-270fc889d5e4",
+  trojanPassword: "temporary-quota-trojan-password",
+  socksUsername: "temporary-quota-client",
+  socksPassword: "temporary-quota-socks-password",
+  subscriptionToken: "temporary_quota_validation_token_00",
+  trafficLimitBytes: 1024 * 1024,
+  trafficUsedBytes: 0,
+  trafficStatsSnapshotBytes: 0,
+  dayLimit: -1,
+  expiresAt: null,
+  lastSubscriptionAt: null,
+  subscriptionDeliveryCount: 0,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
 function waitForPort(port) {
   return new Promise((resolveWait, reject) => {
     const deadline = Date.now() + 10000;
@@ -138,7 +159,7 @@ async function main() {
   const directVmessClientConfigPath = resolve(workDir, "direct-vmess-client.json");
   const remoteSocksClientConfigPath = resolve(workDir, "remote-socks-client.json");
 
-  await writeFile(serverConfigPath, `${JSON.stringify(buildXrayConfig(profile, serverPort), null, 2)}\n`);
+  await writeFile(serverConfigPath, `${JSON.stringify(buildXrayConfig(profile, serverPort, [temporaryQuotaClient]), null, 2)}\n`);
   await writeFile(clientConfigPath, `${JSON.stringify({
     log: { loglevel: "warning" },
     inbounds: [{
@@ -149,7 +170,7 @@ async function main() {
     }],
     outbounds: [{
       protocol: "vless",
-      settings: { vnext: [{ address: "127.0.0.1", port: bridgePort, users: [{ id: uuid, encryption: "none" }] }] },
+      settings: { vnext: [{ address: "127.0.0.1", port: bridgePort, users: [{ id: temporaryQuotaClient.vlessUuid, encryption: "none" }] }] },
       streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vless" } },
     }],
   }, null, 2)}\n`);
@@ -222,6 +243,8 @@ async function main() {
     const request = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${socksPort}`, "https://example.com/"]);
     if (request.code !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
     if (!request.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VLESS transport");
+    const stats = await runCommand(xrayBinary, ["api", "statsquery", `--server=127.0.0.1:${serverPort + 10}`, "-pattern", "gateway-client-99"]);
+    if (stats.code !== 0 || !stats.stdout.includes("gateway-client-99@local.invalid")) throw new Error(`Temporary 1 MB client statistics query failed: ${stats.stderr || stats.stdout}`);
 
     const directVmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${directVmessSocksPort}`, "https://example.com/"]);
     if (directVmessRequest.code !== 0) throw new Error(`Direct VMess transport request failed: ${directVmessRequest.stderr}`);
@@ -235,7 +258,7 @@ async function main() {
     if (remoteSocksRequest.code !== 0) throw new Error(`Remote SOCKS5 transport request failed: ${remoteSocksRequest.stderr}`);
     if (!remoteSocksRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through remote SOCKS5 transport");
 
-    console.log("Xray config validation plus VLESS, VMess, and remote SOCKS5 WebSocket bridge requests passed.");
+    console.log("Xray config validation plus the temporary 1 MB named client, per-user traffic counter, VLESS, VMess, and remote SOCKS5 WebSocket bridge requests passed.");
   } finally {
     await stop(remoteSocksClient);
     await stop(vmessClient);
@@ -246,6 +269,9 @@ async function main() {
     const generated = JSON.parse(await readFile(serverConfigPath, "utf8"));
     if (generated.inbounds?.[0]?.settings?.clients?.[0]?.id !== uuid) {
       throw new Error("Generated config did not preserve the client UUID");
+    }
+    if (!generated.inbounds?.[0]?.settings?.clients?.some(client => client.id === temporaryQuotaClient.vlessUuid && client.email === "gateway-client-99@local.invalid")) {
+      throw new Error("Generated config did not preserve the temporary 1 MB client statistics identity");
     }
   }
 }

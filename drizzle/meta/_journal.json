@@ -36,6 +36,20 @@
       "when": 1786978301328,
       "tag": "0004_giant_toxin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1786979438788,
+      "tag": "0005_jittery_wallflower",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1786979710236,
+      "tag": "0006_lovely_shen",
+      "breakpoints": true
     }
   ]
 }

@@ -93,9 +93,9 @@ describe("VLESS profile serialization", () => {
     const config = buildXrayConfig(disabledGlobal, 10000, [namedClient]) as { inbounds: Array<{ settings: { clients?: Array<{ id?: string; password?: string }>; accounts?: Array<{ user: string }> } }> };
     const clientDetails = buildClientConnectionDetails(profile, namedClient);
 
-    expect(config.inbounds[0]?.settings.clients).toEqual([{ id: namedClient.vlessUuid }]);
-    expect(config.inbounds[1]?.settings.clients).toEqual([{ id: namedClient.vmessUuid, level: 0 }]);
-    expect(config.inbounds[2]?.settings.clients).toEqual([{ password: namedClient.trojanPassword }]);
+    expect(config.inbounds[0]?.settings.clients).toEqual([{ id: namedClient.vlessUuid, email: `gateway-client-${namedClient.id}@local.invalid`, level: 0 }]);
+    expect(config.inbounds[1]?.settings.clients).toEqual([{ id: namedClient.vmessUuid, email: `gateway-client-${namedClient.id}@local.invalid`, level: 0 }]);
+    expect(config.inbounds[2]?.settings.clients).toEqual([{ password: namedClient.trojanPassword, email: `gateway-client-${namedClient.id}@local.invalid`, level: 0 }]);
     expect(config.inbounds[3]?.settings.accounts).toEqual([{ user: namedClient.socksUsername, pass: namedClient.socksPassword }]);
     expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
     expect(clientDetails.vmessUri).toContain(Buffer.from(namedClient.vmessUuid).toString("base64").slice(0, 0));

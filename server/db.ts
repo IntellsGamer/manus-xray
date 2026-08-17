@@ -257,7 +257,7 @@ export async function getGatewayClientBySubscriptionToken(subscriptionToken: str
 export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number }): Promise<GatewayClient> {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
-  const dayLimit = input.dayLimit ?? 0;
+  const dayLimit = input.dayLimit ?? -1;
   const result = await db.insert(gatewayClients).values({
     name: input.name.trim(),
     enabled: true,
@@ -267,7 +267,7 @@ export async function createGatewayClient(input: { name: string; trafficLimitByt
     socksUsername: clientSocksUsername(),
     socksPassword: createGatewayCredential(),
     subscriptionToken: createSubscriptionToken(),
-    trafficLimitBytes: input.trafficLimitBytes ?? 0,
+    trafficLimitBytes: input.trafficLimitBytes ?? -1,
     dayLimit,
     expiresAt: dayLimit > 0 ? new Date(Date.now() + dayLimit * 86_400_000) : null,
   });
@@ -336,6 +336,20 @@ export async function updateGatewayClientPolicy(id: number, input: { trafficLimi
   const client = await getGatewayClientById(id);
   if (!client) throw new Error("Gateway client was not found");
   return client;
+}
+
+export async function recordGatewayClientTrafficUsage(client: GatewayClient, reportedBytes: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const reported = Math.max(0, Math.min(Math.floor(reportedBytes), Number.MAX_SAFE_INTEGER));
+  const previousSnapshot = Math.max(0, client.trafficStatsSnapshotBytes);
+  const delta = reported >= previousSnapshot ? reported - previousSnapshot : reported;
+  const trafficUsedBytes = Math.min(client.trafficUsedBytes + delta, Number.MAX_SAFE_INTEGER);
+  await db.update(gatewayClients).set({
+    trafficUsedBytes,
+    trafficStatsSnapshotBytes: reported,
+  }).where(eq(gatewayClients.id, client.id));
+  return trafficUsedBytes;
 }
 
 export async function recordSubscriptionDelivery(input: { profileKind: "global" | "client"; clientId?: number; deliveryKind: "browser" | "proxy"; userAgent?: string }) {

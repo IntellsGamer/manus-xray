@@ -17,7 +17,7 @@ import {
 } from "../db";
 import { adminProcedure, router } from "../_core/trpc";
 import { buildClientConnectionDetails, buildSocksClientConfig, buildTrojanUri, buildVlessUri, buildVmessUri, normaliseWsPath } from "../vless";
-import { applyXrayProfile } from "../xrayRuntime";
+import { applyXrayProfile, getXrayRuntimeStatus, syncGatewayClientTrafficUsage } from "../xrayRuntime";
 
 const profileInput = z.object({
   serverAddress: z.string().trim().min(1).max(255),
@@ -65,13 +65,16 @@ function presentProfile(profile: Awaited<ReturnType<typeof ensureVlessProfile>>)
   };
 }
 
-function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, client: Awaited<ReturnType<typeof listGatewayClients>>[number]) {
+function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, client: Awaited<ReturnType<typeof listGatewayClients>>[number], trafficUsageAvailable = false) {
   return {
     id: client.id,
     name: client.name,
     enabled: client.enabled,
     expiresAt: client.expiresAt,
     trafficLimitBytes: Number(client.trafficLimitBytes),
+    trafficUsedBytes: Number(client.trafficUsedBytes),
+    remainingTrafficBytes: client.trafficLimitBytes < 0 ? null : Math.max(0, Number(client.trafficLimitBytes) - Number(client.trafficUsedBytes)),
+    trafficUsageAvailable,
     dayLimit: client.dayLimit,
     subscriptionPath: `/sub/${client.subscriptionToken}`,
     subscriptionDeliveryCount: client.subscriptionDeliveryCount,
@@ -85,7 +88,7 @@ export const vlessRouter = router({
   get: adminProcedure.query(async ({ ctx }) => {
     const profile = await profileForRequest(ctx.req.headers);
     await applyXrayProfile(profile);
-    return presentProfile(profile);
+    return { ...presentProfile(profile), runtime: getXrayRuntimeStatus() };
   }),
   update: adminProcedure.input(profileInput).mutation(async ({ ctx, input }) => {
     await profileForRequest(ctx.req.headers);
@@ -119,13 +122,15 @@ export const vlessRouter = router({
   }),
   clients: adminProcedure.query(async ({ ctx }) => {
     const profile = await profileForRequest(ctx.req.headers);
-    const clients = await listGatewayClients();
+    let clients = await listGatewayClients();
+    const trafficUsage = await syncGatewayClientTrafficUsage(clients);
+    clients = await listGatewayClients();
     return Promise.all(clients.map(async client => ({
-      ...presentClient(profile, client),
+      ...presentClient(profile, client, trafficUsage !== null),
       recentDeliveries: await listSubscriptionEventsForClient(client.id),
     })));
   }),
-  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0), dayLimit: z.number().int().min(0).max(3650).default(0) })).mutation(async ({ ctx, input }) => {
+  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1) })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await createGatewayClient(input);
     await applyXrayProfile(profile);
@@ -155,7 +160,7 @@ export const vlessRouter = router({
     await applyXrayProfile(profile);
     return { success: true } as const;
   }),
-  updateClientPolicy: adminProcedure.input(z.object({ id: z.number().int().positive(), trafficLimitBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), dayLimit: z.number().int().min(0).max(3650) })).mutation(async ({ ctx, input }) => {
+  updateClientPolicy: adminProcedure.input(z.object({ id: z.number().int().positive(), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER), dayLimit: z.number().int().min(-1).max(3650) })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await updateGatewayClientPolicy(input.id, input);
     await applyXrayProfile(profile);

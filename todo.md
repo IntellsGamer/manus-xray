@@ -62,3 +62,10 @@
 - [x] Preserve instant React navigation and correct active sidebar state between `/admin` and `/admin/clients`.
 - [x] Add behavior-level tests for permanent client deletion and quota/day-limit policy persistence without touching live gateway records.
 - [x] Add regression coverage for invalid client-policy inputs and dedicated SPA route navigation.
+- [x] Make `-1` the default unlimited sentinel for storage and day-limit values in client policy creation, editing, persistence, display, and tests.
+- [x] Replace the overflowing client-row action cluster and cramped inline policy editor with a responsive management layout.
+- [x] Redesign the gateway subscription UI with clear quota, remaining-data, and remaining-days status that is based only on persisted usage and policy data.
+- [x] Add an explicit gateway runtime-health indicator instead of an unconditional online badge.
+- [x] Present client data as used / maximum, present day limits as days remaining, and keep policy details directly editable.
+- [x] Validate an isolated temporary 1 MB client through local Xray transport and per-user statistics checks.
+- [x] Create a real temporary 1 MB client through the owner client-management flow, verify its actual subscription and availability state, then permanently delete it without modifying existing clients.

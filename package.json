@@ -11,6 +11,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:xray-local": "tsx scripts/xray-local-verify.mjs",
+    "test:temporary-client": "tsx scripts/temporary-client-lifecycle.mjs",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {

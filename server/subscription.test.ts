@@ -4,17 +4,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VlessProfile } from "../drizzle/schema";
 
 const databaseMock = vi.hoisted(() => ({ getVlessProfileBySubscriptionToken: vi.fn(), getGatewayClientBySubscriptionToken: vi.fn(), getVlessProfile: vi.fn(), recordSubscriptionDelivery: vi.fn() }));
+const runtimeMock = vi.hoisted(() => ({ syncGatewayClientTrafficUsage: vi.fn() }));
 vi.mock("./db", () => ({
   getVlessProfileBySubscriptionToken: databaseMock.getVlessProfileBySubscriptionToken,
   getGatewayClientBySubscriptionToken: databaseMock.getGatewayClientBySubscriptionToken,
   getVlessProfile: databaseMock.getVlessProfile,
   recordSubscriptionDelivery: databaseMock.recordSubscriptionDelivery,
 }));
+vi.mock("./xrayRuntime", () => ({ syncGatewayClientTrafficUsage: runtimeMock.syncGatewayClientTrafficUsage }));
 
 import { registerSubscriptionRoute } from "./subscription";
 
 const namedClient = {
-  id: 4, name: "Browser client", enabled: true, vlessUuid: "faec6149-bbf5-45f8-a1bc-657d64023841", vmessUuid: "be1d4606-5320-450d-82ae-2e447f6a7d8b", trojanPassword: "named-trojan-password", socksUsername: "client-browser", socksPassword: "named-socks-password", subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", expiresAt: null, lastSubscriptionAt: null, subscriptionDeliveryCount: 0, createdAt: new Date(), updatedAt: new Date(),
+  id: 4, name: "Browser client", enabled: true, vlessUuid: "faec6149-bbf5-45f8-a1bc-657d64023841", vmessUuid: "be1d4606-5320-450d-82ae-2e447f6a7d8b", trojanPassword: "named-trojan-password", socksUsername: "client-browser", socksPassword: "named-socks-password", subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", trafficLimitBytes: 10 * 1024 * 1024, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, dayLimit: -1, expiresAt: null, lastSubscriptionAt: null, subscriptionDeliveryCount: 0, createdAt: new Date(), updatedAt: new Date(),
 };
 
 const profile: VlessProfile = {
@@ -44,6 +46,7 @@ afterEach(async () => {
   databaseMock.getGatewayClientBySubscriptionToken.mockReset();
   databaseMock.getVlessProfile.mockReset();
   databaseMock.recordSubscriptionDelivery.mockReset();
+  runtimeMock.syncGatewayClientTrafficUsage.mockReset();
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))));
 });
 
@@ -87,8 +90,11 @@ describe("subscription route", () => {
     databaseMock.getGatewayClientBySubscriptionToken.mockResolvedValue(namedClient);
     databaseMock.getVlessProfile.mockResolvedValue(profile);
     databaseMock.recordSubscriptionDelivery.mockResolvedValue(undefined);
+    runtimeMock.syncGatewayClientTrafficUsage.mockResolvedValue(new Map([[namedClient.id, 2 * 1024 * 1024]]));
     const response = await request(`/sub/${namedClient.subscriptionToken}`, { accept: "text/html", "user-agent": "Mozilla/5.0" });
     expect(response.status).toBe(200);
-    await expect(response.text()).resolves.toContain(namedClient.vlessUuid);
+    const html = await response.text();
+    expect(html).toContain(namedClient.vlessUuid);
+    expect(html).toContain("8 MB left");
   });
 });
