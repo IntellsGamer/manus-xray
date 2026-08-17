@@ -28,7 +28,7 @@
 - [x] Correct the VMess URI fields required by mainstream Xray/V2Ray importers.
 - [x] Correct the SOCKS5 Xray client JSON transport and safety settings for the gateway listener.
 - [x] Add direct VMess and SOCKS5-over-WebSocket end-to-end transport checks.
-- [ ] Publish the corrected client imports and verify the supplied connection details.
+- [x] Publish the corrected client imports and verify the supplied connection details.
 - [x] Restore and verify the complete `server/vless.ts` serializer after the interrupted edit.
 - [x] Keep the working VLESS and Trojan serializer outputs unchanged while correcting VMess and SOCKS5 client serialization.
 - [x] Replace the local SOCKS5 client workaround with a real authenticated remote SOCKS5 WebSocket endpoint.
