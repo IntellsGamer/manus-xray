@@ -12,6 +12,8 @@ type UpgradeDependencies = {
   getClients?: () => Promise<GatewayClient[]>;
   applyProfile?: (profile: VlessProfile) => Promise<unknown>;
   internalPort?: () => number;
+  recordTraffic?: (clientId: number, bytes: number) => Promise<Pick<GatewayClient, "trafficLimitBytes" | "trafficUsedBytes">>;
+  enforceQuota?: (profile: VlessProfile) => Promise<unknown>;
 };
 
 function closeSockets(first: Duplex, second: Socket) {
@@ -28,32 +30,72 @@ function buildUpgradeRequest(req: IncomingMessage, internalPort: number, interna
   return `GET ${internalPath}${requestUrl.search} HTTP/${req.httpVersion}\r\n${headers.join("\r\n")}\r\n\r\n`;
 }
 
-function meterClientTunnel(client: GatewayClient, profile: VlessProfile, publicSocket: Duplex, upstream: Socket, initialBytes = 0) {
-  let pendingBytes = initialBytes;
-  let flushed = false;
+export function createTunnelUsageFlusher(input: {
+  clientId: number;
+  profile: VlessProfile;
+  recordTraffic: (clientId: number, bytes: number) => Promise<Pick<GatewayClient, "trafficLimitBytes" | "trafficUsedBytes">>;
+  enforceQuota: (profile: VlessProfile) => Promise<unknown>;
+  flushThresholdBytes?: number;
+  initialBytes?: number;
+}) {
+  let pendingBytes = input.initialBytes ?? 0;
   let writeChain = Promise.resolve();
-  const flush = (force = false) => {
-    if (pendingBytes === 0 || (!force && pendingBytes < 16 * 1024)) return writeChain;
+  const flush = (force = false): Promise<void> => {
+    if (pendingBytes === 0 || (!force && pendingBytes < (input.flushThresholdBytes ?? 16 * 1024))) return writeChain;
     const bytes = pendingBytes;
     pendingBytes = 0;
     writeChain = writeChain.then(async () => {
-      const updated = await recordGatewayClientTunnelTraffic(client.id, bytes);
+      const updated = await input.recordTraffic(input.clientId, bytes);
       if (updated.trafficLimitBytes >= 0 && updated.trafficUsedBytes >= updated.trafficLimitBytes) {
-        await enforceGatewayTrafficQuotas(profile);
+        await input.enforceQuota(input.profile);
       }
     }).catch(() => undefined);
     return writeChain;
   };
-  const observe = (chunk: Buffer) => {
-    pendingBytes += chunk.length;
-    void flush();
+  const observe = (bytes: number) => {
+    pendingBytes += Math.max(0, bytes);
+    return flush();
+  };
+  return { observe, flush };
+}
+
+function meterClientTunnel(
+  client: GatewayClient,
+  profile: VlessProfile,
+  publicSocket: Duplex,
+  upstream: Socket,
+  initialBytes = 0,
+  recordTraffic: (clientId: number, bytes: number) => Promise<Pick<GatewayClient, "trafficLimitBytes" | "trafficUsedBytes">> = recordGatewayClientTunnelTraffic,
+  enforceQuota: (profile: VlessProfile) => Promise<unknown> = enforceGatewayTrafficQuotas,
+) {
+  const meter = createTunnelUsageFlusher({
+    clientId: client.id,
+    profile,
+    initialBytes,
+    recordTraffic,
+    enforceQuota,
+  });
+  let flushed = false;
+  const observe = (chunk: Buffer) => { void meter.observe(chunk.length); };
+  let upstreamHandshakeComplete = false;
+  let upstreamHandshakeBuffer = Buffer.alloc(0);
+  const observeUpstream = (chunk: Buffer) => {
+    if (upstreamHandshakeComplete) return observe(chunk);
+    upstreamHandshakeBuffer = Buffer.concat([upstreamHandshakeBuffer, chunk]);
+    const headerBoundary = upstreamHandshakeBuffer.indexOf("\r\n\r\n");
+    if (headerBoundary === -1) return;
+    upstreamHandshakeComplete = true;
+    const payloadBytes = upstreamHandshakeBuffer.length - headerBoundary - 4;
+    upstreamHandshakeBuffer = Buffer.alloc(0);
+    if (payloadBytes > 0) void meter.observe(payloadBytes);
   };
   publicSocket.on("data", observe);
-  upstream.on("data", observe);
+  upstream.on("data", observeUpstream);
+  void meter.flush();
   const finalize = () => {
     if (flushed) return;
     flushed = true;
-    void flush(true);
+    void meter.flush(true);
   };
   publicSocket.once("close", finalize);
   upstream.once("close", finalize);
@@ -77,7 +119,7 @@ async function bridgeUpgrade(
     socket.destroy();
     return;
   }
-  await enforceGatewayTrafficQuotas(profile);
+  await dependencies.enforceQuota(profile);
   await dependencies.applyProfile(profile);
   const upstream = net.createConnection({ host: "127.0.0.1", port: route.port });
   const connectTimeout = setTimeout(() => closeSockets(socket, upstream), 5000);
@@ -86,7 +128,7 @@ async function bridgeUpgrade(
     clearTimeout(connectTimeout);
     upstream.write(buildUpgradeRequest(req, route.port, route.internalPath));
     trackGatewayTunnel(socket, upstream);
-    if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length);
+    if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
     if (head.length > 0) upstream.write(head);
     socket.pipe(upstream).pipe(socket);
   });
@@ -109,6 +151,8 @@ export function registerVlessUpgradeProxy(server: Server, overrides: UpgradeDepe
     getClients: overrides.getClients ?? listGatewayClients,
     applyProfile: overrides.applyProfile ?? applyXrayProfile,
     internalPort: overrides.internalPort ?? xrayInternalPort,
+    recordTraffic: overrides.recordTraffic ?? recordGatewayClientTunnelTraffic,
+    enforceQuota: overrides.enforceQuota ?? enforceGatewayTrafficQuotas,
   };
 
   server.on("upgrade", (req, socket, head) => {

@@ -14,6 +14,7 @@ const socksPort = 18181;
 const vmessSocksPort = 18184;
 const directVmessSocksPort = 18185;
 const remoteSocksPort = 18186;
+const trojanSocksPort = 18187;
 const bridgePort = 18182;
 const profile = {
   id: 1,
@@ -159,6 +160,7 @@ async function main() {
   const vmessClientConfigPath = resolve(workDir, "vmess-socks-client.json");
   const directVmessClientConfigPath = resolve(workDir, "direct-vmess-client.json");
   const remoteSocksClientConfigPath = resolve(workDir, "remote-socks-client.json");
+  const trojanClientConfigPath = resolve(workDir, "trojan-socks-client.json");
 
   await writeFile(serverConfigPath, `${JSON.stringify(buildXrayConfig(profile, serverPort, [temporaryQuotaClient]), null, 2)}\n`);
   await writeFile(clientConfigPath, `${JSON.stringify({
@@ -203,18 +205,29 @@ async function main() {
   delete directVmessConfig.outbounds[0].streamSettings.tlsSettings;
   delete directVmessConfig.outbounds[0].streamSettings.wsSettings.headers;
   await writeFile(directVmessClientConfigPath, `${JSON.stringify(directVmessConfig, null, 2)}\n`);
+  await writeFile(trojanClientConfigPath, `${JSON.stringify({
+    log: { loglevel: "warning" },
+    inbounds: [{ listen: "127.0.0.1", port: trojanSocksPort, protocol: "socks", settings: { auth: "noauth", udp: false } }],
+    outbounds: [{
+      protocol: "trojan",
+      settings: { servers: [{ address: "127.0.0.1", port: bridgePort, password: temporaryQuotaClient.trojanPassword, level: 0 }] },
+      streamSettings: { network: "ws", security: "none", wsSettings: { path: "/trojan/temporary-quota-route-token" } },
+    }],
+  }, null, 2)}\n`);
 
   xrayTest(serverConfigPath);
   xrayTest(clientConfigPath);
   xrayTest(vmessClientConfigPath);
   xrayTest(directVmessClientConfigPath);
   xrayTest(remoteSocksClientConfigPath);
+  xrayTest(trojanClientConfigPath);
 
   let server;
   let client;
   let vmessClient;
   let directVmessClient;
   let remoteSocksClient;
+  let trojanClient;
   let bridge;
   try {
     server = startXray(serverConfigPath, resolve(workDir, "server.log"));
@@ -235,6 +248,7 @@ async function main() {
     });
     await assertWebSocketHandshake(bridgePort, "/vless/temporary-quota-route-token");
     await assertWebSocketHandshake(bridgePort, "/vmess/temporary-quota-route-token");
+    await assertWebSocketHandshake(bridgePort, "/trojan/temporary-quota-route-token");
     client = startXray(clientConfigPath, resolve(workDir, "client.log"));
     await waitForPort(socksPort);
     vmessClient = startXray(vmessClientConfigPath, resolve(workDir, "vmess-client.log"));
@@ -243,6 +257,8 @@ async function main() {
     await waitForPort(directVmessSocksPort);
     remoteSocksClient = startXray(remoteSocksClientConfigPath, resolve(workDir, "remote-socks-client.log"));
     await waitForPort(remoteSocksPort);
+    trojanClient = startXray(trojanClientConfigPath, resolve(workDir, "trojan-client.log"));
+    await waitForPort(trojanSocksPort);
 
     const request = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${socksPort}`, "https://example.com/"]);
     if (request.code !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
@@ -260,10 +276,15 @@ async function main() {
 
     const remoteSocksRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${remoteSocksPort}`, "https://example.com/"]);
     if (remoteSocksRequest.code !== 0) throw new Error(`Remote SOCKS5 transport request failed: ${remoteSocksRequest.stderr}`);
-    if (!remoteSocksRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through remote SOCKS5 transport");
+    if (!remoteSocksRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through remote SOCKS5 WebSocket transport");
 
-    console.log("Xray config validation plus the temporary 1 MB named client, per-user traffic counter, VLESS, VMess, and remote SOCKS5 WebSocket bridge requests passed.");
+    const trojanRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${trojanSocksPort}`, "https://example.com/"]);
+    if (trojanRequest.code !== 0) throw new Error(`Trojan transport request failed: ${trojanRequest.stderr}`);
+    if (!trojanRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through Trojan WebSocket transport");
+
+    console.log("Xray config validation plus the temporary 1 MB named client, VLESS, VMess, Trojan, and remote SOCKS5 opaque-route bridge requests passed.");
   } finally {
+    await stop(trojanClient);
     await stop(remoteSocksClient);
     await stop(vmessClient);
     await stop(directVmessClient);

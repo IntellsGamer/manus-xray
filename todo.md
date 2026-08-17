@@ -87,10 +87,18 @@
 - [x] Diagnose and correct the anomalous high usage recorded for the affected named client without altering that client’s credentials or policy.
 - [x] Add deterministic regression coverage proving VLESS, VMess, and Trojan counters for one client are attributed separately and summed only once.
 - [x] Verify the affected client’s live post-fix Xray counter behavior after protocol-specific runtime identities are deployed.
-- [ ] Diagnose and correct the remaining client quota overcount where a few megabytes of transfer can exhaust a 10 MB limit.
-- [ ] Add regression coverage for repeated live sampler calls across multiple application instances so a counter delta is persisted only once.
-- [ ] Verify the reported client’s quota usage and enabled state after the corrected live accounting path is deployed.
-- [ ] Replace shared protocol WebSocket paths for named clients with unique opaque per-client route suffixes while keeping Xray’s internal protocol paths unchanged.
-- [ ] Identify each incoming tunnel from its client-specific route and persist backend-measured bidirectional byte deltas atomically without parsing encrypted protocol UUIDs.
-- [ ] Regenerate all named-client connection details and subscriptions with client-specific paths, preserving global profile paths and collision protection.
-- [ ] Verify VLESS, VMess, Trojan, and SOCKS5 tunnel routing, accurate byte metering, quota disablement, and forced tunnel closure using client-specific routes.
+- [x] Diagnose and correct the remaining client quota overcount where a few megabytes of transfer can exhaust a 10 MB limit.
+- [x] Supersede repeated Xray sampler regression coverage by removing Xray counters from quota persistence; cover atomic backend tunnel-byte deltas instead.
+- [x] Verify the reported client’s quota usage and enabled state after the corrected live accounting path is deployed.
+- [x] Replace shared protocol WebSocket paths for named clients with unique opaque per-client route suffixes while keeping Xray’s internal protocol paths unchanged.
+- [x] Identify each incoming tunnel from its client-specific route and persist backend-measured bidirectional byte deltas atomically without parsing encrypted protocol UUIDs.
+- [x] Regenerate all named-client connection details and subscriptions with client-specific paths, preserving global profile paths and collision protection.
+- [x] Verify VLESS, VMess, Trojan, and SOCKS5 tunnel routing, accurate byte metering, quota disablement, and forced tunnel closure using client-specific routes.
+- [x] Add deterministic unit coverage for repeated backend tunnel-byte persistence and its quota-threshold effect.
+- [x] Replace stale Xray-counter and sampler wording in client-management UI with backend bridge-byte metering language.
+- [x] Verify backend metering and quota-triggered tunnel closure through opaque routes for VMess and at least one additional non-VLESS protocol.
+- [x] Diagnose the reported production 500 incident; no application or schema exception was present in live logs and repeated public-root checks recovered successfully.
+- [x] Resume the reported production 500 investigation and confirm transient recovery: no persistent exception in live logs and five consecutive successful public-root responses.
+- [x] Redesign the create-client policy fields with explicit Storage limit and Day limit labels, keeping the GB selector visually attached to storage.
+- [x] Add route-keyed quota-hit regression coverage that proves VMess and Trojan tunnels reach the same forced-closure enforcement path as VLESS.
+- [x] Record the production 500 as a transient recovered incident with verified public-root stability rather than claiming an undeployed repair.
