@@ -30,6 +30,7 @@ const profile = {
   socksUsername: "gateway",
   socksPassword: "local-socks-password",
   socksWsPath: "/socks",
+  globalProfileEnabled: true,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
+import { GatewayClient, InsertUser, gatewayClients, subscriptionEvents, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
-import { createGatewayCredential, createSubscriptionToken, createVlessUuid, normaliseWsPath } from "./vless";
+import { createGatewayCredential, createSubscriptionToken, createVlessUuid, normaliseGatewayPaths, normaliseWsPath } from "./vless";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -181,6 +181,17 @@ export async function updateVlessProfile(
   return profile;
 }
 
+export async function updateGatewayPathsAndGlobalProfile(changes: Pick<VlessProfile, "wsPath" | "vmessWsPath" | "trojanWsPath" | "socksWsPath" | "globalProfileEnabled">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  const normalized = { ...normaliseGatewayPaths(changes), globalProfileEnabled: changes.globalProfileEnabled };
+  await db.update(vlessProfiles).set(normalized).where(eq(vlessProfiles.id, 1));
+  const profile = await getVlessProfile();
+  if (!profile) throw new Error("VLESS profile was not found");
+  return profile;
+}
+
 export async function regenerateVlessUuid() {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
@@ -217,4 +228,114 @@ export async function regenerateGatewayProtocolCredential(protocol: "vmess" | "t
   const profile = await getVlessProfile();
   if (!profile) throw new Error("VLESS profile was not found");
   return profile;
+}
+
+function clientSocksUsername() {
+  return `client-${createGatewayCredential().slice(0, 12)}`;
+}
+
+export async function listGatewayClients() {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  return db.select().from(gatewayClients).orderBy(desc(gatewayClients.createdAt));
+}
+
+export async function getGatewayClientById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.select().from(gatewayClients).where(eq(gatewayClients.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getGatewayClientBySubscriptionToken(subscriptionToken: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.select().from(gatewayClients).where(eq(gatewayClients.subscriptionToken, subscriptionToken)).limit(1);
+  return result[0];
+}
+
+export async function createGatewayClient(name: string): Promise<GatewayClient> {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.insert(gatewayClients).values({
+    name: name.trim(),
+    enabled: true,
+    vlessUuid: createVlessUuid(),
+    vmessUuid: createVlessUuid(),
+    trojanPassword: createGatewayCredential(),
+    socksUsername: clientSocksUsername(),
+    socksPassword: createGatewayCredential(),
+    subscriptionToken: createSubscriptionToken(),
+  });
+  const created = await getGatewayClientById(Number(result[0].insertId));
+  if (!created) throw new Error("Failed to create gateway client");
+  return created;
+}
+
+export async function setGatewayClientEnabled(id: number, enabled: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayClients).set({ enabled }).where(eq(gatewayClients.id, id));
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found");
+  return client;
+}
+
+export async function rotateGatewayClientCredentials(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayClients).set({
+    vlessUuid: createVlessUuid(),
+    vmessUuid: createVlessUuid(),
+    trojanPassword: createGatewayCredential(),
+    socksUsername: clientSocksUsername(),
+    socksPassword: createGatewayCredential(),
+    subscriptionToken: createSubscriptionToken(),
+  }).where(eq(gatewayClients.id, id));
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found");
+  return client;
+}
+
+export async function revokeGatewayClient(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayClients).set({
+    enabled: false,
+    vlessUuid: createVlessUuid(),
+    vmessUuid: createVlessUuid(),
+    trojanPassword: createGatewayCredential(),
+    socksUsername: clientSocksUsername(),
+    socksPassword: createGatewayCredential(),
+    subscriptionToken: createSubscriptionToken(),
+  }).where(eq(gatewayClients.id, id));
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found");
+  return client;
+}
+
+export async function recordSubscriptionDelivery(input: { profileKind: "global" | "client"; clientId?: number; deliveryKind: "browser" | "proxy"; userAgent?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.insert(subscriptionEvents).values({
+    profileKind: input.profileKind,
+    clientId: input.clientId,
+    deliveryKind: input.deliveryKind,
+    userAgent: input.userAgent?.slice(0, 512),
+  });
+  if (input.profileKind === "client" && input.clientId) {
+    const client = await getGatewayClientById(input.clientId);
+    if (client) {
+      await db.update(gatewayClients).set({
+        lastSubscriptionAt: new Date(),
+        subscriptionDeliveryCount: client.subscriptionDeliveryCount + 1,
+      }).where(eq(gatewayClients.id, input.clientId));
+    }
+  }
+}
+
+export async function listSubscriptionEventsForClient(clientId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  return db.select().from(subscriptionEvents).where(eq(subscriptionEvents.clientId, clientId)).orderBy(desc(subscriptionEvents.requestedAt)).limit(10);
 }

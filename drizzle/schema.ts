@@ -44,9 +44,43 @@ export const vlessProfiles = mysqlTable("vless_profiles", {
   socksUsername: varchar("socksUsername", { length: 64 }).notNull().default(""),
   socksPassword: varchar("socksPassword", { length: 64 }).notNull().default(""),
   socksWsPath: varchar("socksWsPath", { length: 255 }).notNull().default("/socks"),
+  globalProfileEnabled: boolean("globalProfileEnabled").notNull().default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type VlessProfile = typeof vlessProfiles.$inferSelect;
 export type InsertVlessProfile = typeof vlessProfiles.$inferInsert;
+
+/** Named identities that share the gateway transport but own distinct credentials and feeds. */
+export const gatewayClients = mysqlTable("gateway_clients", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  vlessUuid: varchar("vlessUuid", { length: 36 }).notNull().unique(),
+  vmessUuid: varchar("vmessUuid", { length: 36 }).notNull().unique(),
+  trojanPassword: varchar("trojanPassword", { length: 64 }).notNull().unique(),
+  socksUsername: varchar("socksUsername", { length: 64 }).notNull().unique(),
+  socksPassword: varchar("socksPassword", { length: 64 }).notNull(),
+  subscriptionToken: varchar("subscriptionToken", { length: 96 }).notNull().unique(),
+  expiresAt: timestamp("expiresAt"),
+  lastSubscriptionAt: timestamp("lastSubscriptionAt"),
+  subscriptionDeliveryCount: int("subscriptionDeliveryCount").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type GatewayClient = typeof gatewayClients.$inferSelect;
+export type InsertGatewayClient = typeof gatewayClients.$inferInsert;
+
+/** Real delivery observations for subscription routes; this is not proxy traffic accounting. */
+export const subscriptionEvents = mysqlTable("subscription_events", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId"),
+  profileKind: mysqlEnum("profileKind", ["global", "client"]).notNull(),
+  deliveryKind: mysqlEnum("deliveryKind", ["browser", "proxy"]).notNull(),
+  userAgent: varchar("userAgent", { length: 512 }),
+  requestedAt: timestamp("requestedAt").defaultNow().notNull(),
+});
+
+export type SubscriptionEvent = typeof subscriptionEvents.$inferSelect;

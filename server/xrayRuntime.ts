@@ -4,6 +4,7 @@ import { dirname, resolve } from "path";
 import { ChildProcess, spawn } from "child_process";
 import net from "net";
 import type { VlessProfile } from "../drizzle/schema";
+import { listGatewayClients } from "./db";
 import { buildXrayConfig } from "./vless";
 
 let runningProcess: ChildProcess | undefined;
@@ -20,8 +21,8 @@ export const xrayInternalPort = () => {
   return configured;
 };
 
-function configFor(profile: VlessProfile) {
-  return buildXrayConfig(profile, xrayInternalPort());
+async function configFor(profile: VlessProfile) {
+  return buildXrayConfig(profile, xrayInternalPort(), await listGatewayClients());
 }
 
 async function stopProcess() {
@@ -72,7 +73,7 @@ async function waitForPrivateListener(port: number, child: ChildProcess) {
 /** Writes the generated Xray JSON before any runtime process is launched. */
 export async function writeXrayConfig(profile: VlessProfile) {
   const configPath = xrayConfigPath();
-  const content = `${JSON.stringify(configFor(profile), null, 2)}\n`;
+  const content = `${JSON.stringify(await configFor(profile), null, 2)}\n`;
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, content, { mode: 0o600 });
   return { configPath, configHash: createHash("sha256").update(content).digest("hex") };

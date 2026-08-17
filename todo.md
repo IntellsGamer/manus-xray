@@ -34,3 +34,14 @@
 - [x] Replace the local SOCKS5 client workaround with a real authenticated remote SOCKS5 WebSocket endpoint.
 - [x] Define and display the actual remote SOCKS5 host, port, username, password, and WebSocket transport path in the admin panel.
 - [x] Validate a remote SOCKS5 client connection through the gateway bridge before publishing the correction.
+- [x] Add a multi-client model with named identities, individual protocol credentials, enabled state, and per-client subscription tokens.
+- [x] Add an optional global profile switch that controls whether the legacy global credentials participate in generated Xray configuration.
+- [x] Add independently editable VLESS, VMess, Trojan, and SOCKS5 WebSocket paths with exact collision protection.
+- [x] Make `/sub/<token>` negotiate browser versus proxy-client responses without exposing client configurations to invalid tokens.
+- [x] Create a browser subscription-status page showing real subscription access metadata and the client’s available connection details in the existing gateway style.
+- [x] Record subscription delivery events and surface reliable per-client telemetry without fabricating proxy-traffic metrics.
+- [x] Build owner-only client lifecycle controls for creation, enable/disable, rotation, and revocation.
+- [x] Test client isolation, browser/proxy subscription behavior, path collision rejection, global-profile switching, and Xray config generation before checkpointing.
+- [x] Add credential-specific import details to browser subscription-status responses for a valid named client.
+- [x] Add an explicit client-revocation action that invalidates credentials and the subscription token separately from ordinary enable/disable controls.
+- [x] Add deterministic path-collision and stronger named-client isolation tests, then rerun the complete verification suite.

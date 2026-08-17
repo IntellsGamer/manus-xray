@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { VlessProfile } from "../drizzle/schema";
-import { buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXrayConfig, normaliseWsPath } from "./vless";
+import type { GatewayClient, VlessProfile } from "../drizzle/schema";
+import { buildClientConnectionDetails, buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXrayConfig, normaliseGatewayPaths, normaliseWsPath } from "./vless";
 
 const profile: VlessProfile = {
   id: 1,
@@ -17,8 +17,26 @@ const profile: VlessProfile = {
   socksUsername: "gateway",
   socksPassword: "test-socks-password",
   socksWsPath: "/socks",
+  globalProfileEnabled: true,
   createdAt: new Date("2026-08-17T00:00:00Z"),
   updatedAt: new Date("2026-08-17T00:00:00Z"),
+};
+
+const namedClient: GatewayClient = {
+  id: 9,
+  name: "Test device",
+  enabled: true,
+  vlessUuid: "faec6149-bbf5-45f8-a1bc-657d64023841",
+  vmessUuid: "be1d4606-5320-450d-82ae-2e447f6a7d8b",
+  trojanPassword: "named-trojan-password",
+  socksUsername: "client-test-device",
+  socksPassword: "named-socks-password",
+  subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  expiresAt: null,
+  lastSubscriptionAt: null,
+  subscriptionDeliveryCount: 0,
+  createdAt: new Date(),
+  updatedAt: new Date(),
 };
 
 describe("VLESS profile serialization", () => {
@@ -68,5 +86,23 @@ describe("VLESS profile serialization", () => {
     expect(socks.outbounds[0].protocol).toBe("socks");
     expect(socks.outbounds[0].settings.servers[0].users[0]).toEqual({ user: "gateway", pass: "test-socks-password" });
     expect(socks.outbounds[0].streamSettings.wsSettings.path).toBe("/socks");
+  });
+
+  it("isolates named credentials and excludes global credentials when the global profile is disabled", () => {
+    const disabledGlobal = { ...profile, globalProfileEnabled: false };
+    const config = buildXrayConfig(disabledGlobal, 10000, [namedClient]) as { inbounds: Array<{ settings: { clients?: Array<{ id?: string; password?: string }>; accounts?: Array<{ user: string }> } }> };
+    const clientDetails = buildClientConnectionDetails(profile, namedClient);
+
+    expect(config.inbounds[0]?.settings.clients).toEqual([{ id: namedClient.vlessUuid }]);
+    expect(config.inbounds[1]?.settings.clients).toEqual([{ id: namedClient.vmessUuid, level: 0 }]);
+    expect(config.inbounds[2]?.settings.clients).toEqual([{ password: namedClient.trojanPassword }]);
+    expect(config.inbounds[3]?.settings.accounts).toEqual([{ user: namedClient.socksUsername, pass: namedClient.socksPassword }]);
+    expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
+    expect(clientDetails.vmessUri).toContain(Buffer.from(namedClient.vmessUuid).toString("base64").slice(0, 0));
+    expect(clientDetails.trojanUri).toContain(encodeURIComponent(namedClient.trojanPassword));
+  });
+
+  it("rejects colliding protocol paths after normalization", () => {
+    expect(() => normaliseGatewayPaths({ wsPath: "shared", vmessWsPath: "/shared", trojanWsPath: "/trojan", socksWsPath: "/socks" })).toThrow("different WebSocket path");
   });
 });
