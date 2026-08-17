@@ -51,3 +51,5 @@
 - [x] Run post-consolidation type, unit, production-build, and unified sidebar-navigation verification before checkpointing.
 - [x] Verify both unified sidebar entries navigate to their intended in-page `/admin` sections and add durable regression coverage.
 - [x] Make both unified sidebar controls anchor-addressable and verify the rendered `#gateway-overview` and `#client-management` destinations.
+- [x] Remove real-name placeholders from the project interface and replace them with neutral labels.
+- [x] Verify no visible project placeholder reuses the user’s real name before checkpointing.
