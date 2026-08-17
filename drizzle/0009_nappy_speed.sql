@@ -1,0 +1,1 @@
+ALTER TABLE `gateway_clients` ADD `speedLimitMbps` int DEFAULT -1 NOT NULL;

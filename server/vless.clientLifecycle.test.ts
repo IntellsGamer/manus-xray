@@ -85,6 +85,7 @@ const storedClient = {
   trafficUsedBytes: 0,
   trafficStatsSnapshotBytes: 0,
   dayLimit: -1,
+  speedLimitMbps: -1,
   expiresAt: null,
   subscriptionDeliveryCount: 0,
   lastSubscriptionAt: null,
@@ -118,32 +119,43 @@ describe("client lifecycle mutations", () => {
       ...storedClient,
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
       dayLimit: 30,
+      speedLimitMbps: 25,
       expiresAt: new Date("2026-09-16T00:00:00.000Z"),
     });
     mocks.deleteGatewayClient.mockResolvedValue(undefined);
+    mocks.createGatewayClient.mockResolvedValue(storedClient);
     mocks.applyXrayProfile.mockResolvedValue(undefined);
     mocks.getGatewayClientById.mockResolvedValue(storedClient);
     mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, quotaExhaustedAt: null });
   });
 
-  it("persists a valid traffic and day policy and returns the rendered quota state", async () => {
+  it("persists a valid storage, day, and Mbps policy and returns the rendered state", async () => {
     const caller = vlessRouter.createCaller(adminContext());
-    const result = await caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30 });
+    const result = await caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30, speedLimitMbps: 25 });
 
     expect(mocks.updateGatewayClientPolicy).toHaveBeenCalledWith(storedClient.id, {
       id: storedClient.id,
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
       dayLimit: 30,
+      speedLimitMbps: 25,
     });
-    expect(result).toMatchObject({ trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30 });
+    expect(result).toMatchObject({ trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30, speedLimitMbps: 25 });
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
+  });
+
+  it("defaults new clients to unlimited speed and rejects an ambiguous zero-Mbps policy", async () => {
+    const caller = vlessRouter.createCaller(adminContext());
+    await caller.createClient({ name: "Unlimited default" });
+    expect(mocks.createGatewayClient).toHaveBeenCalledWith({ name: "Unlimited default", trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1 });
+
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("rejects invalid quota and day-limit requests before persistence", async () => {
     const caller = vlessRouter.createCaller(adminContext());
 
-    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -2, dayLimit: 30 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 0, dayLimit: 3651 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -2, dayLimit: 30, speedLimitMbps: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 0, dayLimit: 3651, speedLimitMbps: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(mocks.updateGatewayClientPolicy).not.toHaveBeenCalled();
   });
 
@@ -160,6 +172,6 @@ describe("client lifecycle mutations", () => {
     const result = await caller.resetClientUsage({ id: storedClient.id });
 
     expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id);
-    expect(result).toMatchObject({ id: storedClient.id, trafficUsedBytes: 0, trafficLimitBytes: -1, dayLimit: -1 });
+    expect(result).toMatchObject({ id: storedClient.id, trafficUsedBytes: 0, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1 });
   });
 });

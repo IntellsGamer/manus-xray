@@ -3,7 +3,7 @@ import { createConnection, createServer as createTcpServer } from "net";
 import { AddressInfo } from "net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VlessProfile } from "../drizzle/schema";
-import { createTunnelUsageFlusher, registerVlessUpgradeProxy } from "./vlessUpgradeProxy";
+import { ClientSpeedLimiter, createTunnelUsageFlusher, registerVlessUpgradeProxy, speedLimitBytesPerSecond } from "./vlessUpgradeProxy";
 import { activeGatewayTunnelCount, closeActiveGatewayTunnels } from "./gatewayTunnels";
 
 const profile: VlessProfile = {
@@ -39,6 +39,38 @@ function listen(server: ReturnType<typeof createHttpServer> | ReturnType<typeof 
       resolveListen((server.address() as AddressInfo).port);
     });
   });
+}
+
+function listenAt(server: ReturnType<typeof createTcpServer>, port: number) {
+  return new Promise<void>((resolveListen, rejectListen) => {
+    const onError = (error: Error) => {
+      server.off("error", onError);
+      rejectListen(error);
+    };
+    server.once("error", onError);
+    server.listen(port, "127.0.0.1", () => {
+      server.off("error", onError);
+      resolveListen();
+    });
+  });
+}
+
+async function listenAdjacent(first: ReturnType<typeof createTcpServer>, second: ReturnType<typeof createTcpServer>) {
+  for (let port = 19000; port < 19100; port += 2) {
+    try {
+      await listenAt(first, port);
+      try {
+        await listenAt(second, port + 1);
+        closeables.push(first, second);
+        return port;
+      } catch {
+        await new Promise<void>(resolveClose => first.close(() => resolveClose()));
+      }
+    } catch {
+      // Try the next adjacent port pair.
+    }
+  }
+  throw new Error("Could not allocate adjacent loopback ports for protocol bridge testing");
 }
 
 function upgrade(port: number, path: string) {
@@ -81,7 +113,131 @@ function upgradeWithBufferedPayload(port: number, path: string, payload: string,
   });
 }
 
+function receiveUpgradePayload(port: number, path: string, expectedPayloadBytes: number) {
+  return new Promise<number>((resolvePayload, rejectPayload) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    const startedAt = Date.now();
+    let response = Buffer.alloc(0);
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      rejectPayload(new Error("Timed out waiting for upgraded payload"));
+    }, 5000);
+    socket.once("connect", () => {
+      socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`);
+    });
+    socket.on("data", chunk => {
+      response = Buffer.concat([response, chunk]);
+      const headerBoundary = response.indexOf("\r\n\r\n");
+      if (headerBoundary === -1 || response.length - headerBoundary - 4 < expectedPayloadBytes) return;
+      clearTimeout(timeout);
+      socket.destroy();
+      resolvePayload(Date.now() - startedAt);
+    });
+    socket.once("error", error => {
+      clearTimeout(timeout);
+      rejectPayload(error);
+    });
+  });
+}
+
 describe("VLESS WebSocket upgrade bridge", () => {
+  it("shares one finite Mbps budget across upload and download reservations", () => {
+    const limiter = new ClientSpeedLimiter(1_000);
+
+    expect(speedLimitBytesPerSecond(-1)).toBe(0);
+    expect(speedLimitBytesPerSecond(8)).toBe(1_000_000);
+    expect(limiter.reserve(500, 0)).toBe(500);
+    expect(limiter.reserve(500, 0)).toBe(1_000);
+    expect(limiter.reserve(250, 0)).toBe(1_250);
+  });
+
+  it("throttles a finite-Mbps named route while leaving an unlimited route direct", async () => {
+    const payload = Buffer.alloc(128 * 1024, 0x61);
+    const finiteClient = { id: 51, enabled: true, connectionToken: "finite-speed-route", expiresAt: null, speedLimitMbps: 1 } as unknown as import("../drizzle/schema").GatewayClient;
+    const unlimitedClient = { id: 52, enabled: true, connectionToken: "unlimited-speed-route", expiresAt: null, speedLimitMbps: -1 } as unknown as import("../drizzle/schema").GatewayClient;
+    const upstream = createTcpServer(socket => {
+      socket.once("data", () => {
+        socket.write(Buffer.concat([Buffer.from("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"), payload]));
+      });
+    });
+    const upstreamPort = await listen(upstream);
+    const bridge = createHttpServer((_request, response) => response.end("not found"));
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      getClients: async () => [finiteClient, unlimitedClient],
+      applyProfile: vi.fn().mockResolvedValue(undefined),
+      internalPort: () => upstreamPort,
+      recordTraffic: vi.fn().mockResolvedValue({ trafficLimitBytes: -1, trafficUsedBytes: 0 }),
+      enforceQuota: vi.fn().mockResolvedValue(undefined),
+    });
+    const bridgePort = await listen(bridge);
+
+    const unlimitedElapsed = await receiveUpgradePayload(bridgePort, "/vless/unlimited-speed-route", payload.length);
+    const limitedElapsed = await receiveUpgradePayload(bridgePort, "/vless/finite-speed-route", payload.length);
+
+    expect(unlimitedElapsed).toBeLessThan(500);
+    expect(limitedElapsed).toBeGreaterThanOrEqual(800);
+    expect(limitedElapsed).toBeGreaterThan(unlimitedElapsed + 500);
+  });
+
+  it("shares one finite client budget across concurrent bridge tunnels", async () => {
+    const payload = Buffer.alloc(64 * 1024, 0x62);
+    const namedClient = { id: 53, enabled: true, connectionToken: "shared-speed-route", expiresAt: null, speedLimitMbps: 1 } as unknown as import("../drizzle/schema").GatewayClient;
+    const upstream = createTcpServer(socket => {
+      socket.once("data", () => {
+        socket.write(Buffer.concat([Buffer.from("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"), payload]));
+      });
+    });
+    const upstreamPort = await listen(upstream);
+    const bridge = createHttpServer((_request, response) => response.end("not found"));
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      getClients: async () => [namedClient],
+      applyProfile: vi.fn().mockResolvedValue(undefined),
+      internalPort: () => upstreamPort,
+      recordTraffic: vi.fn().mockResolvedValue({ trafficLimitBytes: -1, trafficUsedBytes: 0 }),
+      enforceQuota: vi.fn().mockResolvedValue(undefined),
+    });
+    const bridgePort = await listen(bridge);
+
+    const durations = await Promise.all([
+      receiveUpgradePayload(bridgePort, "/vless/shared-speed-route", payload.length),
+      receiveUpgradePayload(bridgePort, "/vless/shared-speed-route", payload.length),
+    ]);
+
+    expect(Math.max(...durations)).toBeGreaterThanOrEqual(900);
+  });
+
+  it("shares a finite client budget across concurrent VLESS and VMess routes", async () => {
+    const payload = Buffer.alloc(64 * 1024, 0x63);
+    const namedClient = { id: 54, enabled: true, connectionToken: "cross-protocol-speed-route", expiresAt: null, speedLimitMbps: 1 } as unknown as import("../drizzle/schema").GatewayClient;
+    const respond = (socket: Socket) => {
+      socket.once("data", () => {
+        socket.write(Buffer.concat([Buffer.from("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"), payload]));
+      });
+    };
+    const vlessUpstream = createTcpServer(respond);
+    const vmessUpstream = createTcpServer(respond);
+    const internalPort = await listenAdjacent(vlessUpstream, vmessUpstream);
+    const bridge = createHttpServer((_request, response) => response.end("not found"));
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      getClients: async () => [namedClient],
+      applyProfile: vi.fn().mockResolvedValue(undefined),
+      internalPort: () => internalPort,
+      recordTraffic: vi.fn().mockResolvedValue({ trafficLimitBytes: -1, trafficUsedBytes: 0 }),
+      enforceQuota: vi.fn().mockResolvedValue(undefined),
+    });
+    const bridgePort = await listen(bridge);
+
+    const durations = await Promise.all([
+      receiveUpgradePayload(bridgePort, "/vless/cross-protocol-speed-route", payload.length),
+      receiveUpgradePayload(bridgePort, "/vmess/cross-protocol-speed-route", payload.length),
+    ]);
+
+    expect(Math.max(...durations)).toBeGreaterThanOrEqual(900);
+  });
+
   it("persists concurrent bridge deltas in order and enforces the quota when the accumulated total reaches its threshold", async () => {
     const recordTraffic = vi.fn()
       .mockResolvedValueOnce({ trafficLimitBytes: 1000, trafficUsedBytes: 200 })

@@ -36,6 +36,8 @@ const pathsInput = z.object({
   globalProfileEnabled: z.boolean(),
 });
 
+const speedLimitInput = z.number().int().min(-1).max(100_000).refine(value => value === -1 || value >= 1, "Speed limit must be -1 or at least 1 Mbps");
+
 function requestHost(headers: Record<string, string | string[] | undefined>) {
   const forwarded = headers["x-forwarded-host"];
   const host = Array.isArray(forwarded) ? forwarded[0] : forwarded ?? headers.host;
@@ -79,6 +81,7 @@ function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, 
     remainingTrafficBytes: client.trafficLimitBytes < 0 ? null : Math.max(0, Number(client.trafficLimitBytes) - Number(client.trafficUsedBytes)),
     trafficUsageAvailable,
     dayLimit: client.dayLimit,
+    speedLimitMbps: client.speedLimitMbps,
     subscriptionPath: `/sub/${client.subscriptionToken}`,
     subscriptionDeliveryCount: client.subscriptionDeliveryCount,
     lastSubscriptionAt: client.lastSubscriptionAt,
@@ -134,7 +137,7 @@ export const vlessRouter = router({
       recentDeliveries: await listSubscriptionEventsForClient(client.id),
     })));
   }),
-  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1) })).mutation(async ({ ctx, input }) => {
+  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1), speedLimitMbps: speedLimitInput.default(-1) })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await createGatewayClient(input);
     await applyXrayProfile(profile);
@@ -164,7 +167,7 @@ export const vlessRouter = router({
     await applyXrayProfile(profile);
     return { success: true } as const;
   }),
-  updateClientPolicy: adminProcedure.input(z.object({ id: z.number().int().positive(), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER), dayLimit: z.number().int().min(-1).max(3650) })).mutation(async ({ ctx, input }) => {
+  updateClientPolicy: adminProcedure.input(z.object({ id: z.number().int().positive(), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER), dayLimit: z.number().int().min(-1).max(3650), speedLimitMbps: speedLimitInput })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await updateGatewayClientPolicy(input.id, input);
     await applyXrayProfile(profile);

@@ -109,3 +109,11 @@
 - [x] Leave the affected client’s stored usage unchanged at the user’s request; the agent did not reset it despite later traffic changes, and Reset usage remains available for a clean verified baseline.
 - [x] Add deterministic bridge coverage with distinct upload and download payloads proving each direction is persisted exactly once without echo duplication.
 - [x] Correct the manual-reset checklist wording to state that the agent did not reset the affected client despite later legitimate usage changes.
+- [x] Add a persistent per-client Mbps speed-limit policy with `-1` as the unlimited sentinel and migrate every existing client to unlimited.
+- [x] Apply each finite client speed limit in the route-keyed gateway bridge across all of its protocol tunnels without changing credentials or routes.
+- [x] Add unified Mbps speed-limit controls to client creation and policy editing, including validation and clear unlimited guidance.
+- [x] Verify schema migration, shared bridge limiting, client lifecycle policy updates, and local transport behavior with finite and unlimited speed limits.
+- [x] Add an end-to-end local finite-Mbps client transfer test that proves throttled duration while an unlimited path remains unaffected.
+- [x] Add a focused regression proving a finite client budget is shared across concurrent protocol tunnels in the real bridge flow.
+- [x] Add a real concurrent VLESS-and-VMess finite-rate bridge test proving both protocols consume the same client Mbps budget.
+- [x] Rerun full verification after the cross-protocol shared-budget regression is added.
