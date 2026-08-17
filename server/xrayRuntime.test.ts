@@ -3,17 +3,19 @@ import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { enforceGatewayTrafficQuotas, parseClientTrafficStats } from "./xrayRuntime";
 
 describe("Xray client traffic counters", () => {
-  it("sums uplink and downlink values only for known named-client statistics", () => {
+  it("sums each protocol-specific counter exactly once and ignores legacy shared identities", () => {
     const counters = parseClientTrafficStats(JSON.stringify({
       stat: [
-        { name: "user>>>gateway-client-7@local.invalid>>>traffic>>>uplink", value: "1200" },
-        { name: "user>>>gateway-client-7@local.invalid>>>traffic>>>downlink", value: "4800" },
+        { name: "user>>>gateway-client-7-vless@local.invalid>>>traffic>>>uplink", value: "1200" },
+        { name: "user>>>gateway-client-7-vmess@local.invalid>>>traffic>>>downlink", value: "4800" },
+        { name: "user>>>gateway-client-7-trojan@local.invalid>>>traffic>>>uplink", value: "600" },
+        { name: "user>>>gateway-client-7@local.invalid>>>traffic>>>downlink", value: "999999" },
         { name: "user>>>unrelated@local.invalid>>>traffic>>>downlink", value: "9000" },
         { name: "inbound>>>vless-in>>>traffic>>>uplink", value: "600" },
       ],
     }), [{ id: 7 }, { id: 8 }]);
 
-    expect(counters.get(7)).toBe(6000);
+    expect(counters.get(7)).toBe(6600);
     expect(counters.get(8)).toBeUndefined();
   });
 

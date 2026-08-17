@@ -3,6 +3,7 @@ import type { TrpcContext } from "./_core/context";
 
 const mocks = vi.hoisted(() => ({
   ensureVlessProfile: vi.fn(),
+  getGatewayClientById: vi.fn(),
   createGatewayClient: vi.fn(),
   deleteGatewayClient: vi.fn(),
   listGatewayClients: vi.fn(),
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   regenerateGatewayProtocolCredential: vi.fn(),
   regenerateSubscriptionToken: vi.fn(),
   regenerateVlessUuid: vi.fn(),
+  resetGatewayClientTrafficUsage: vi.fn(),
   revokeGatewayClient: vi.fn(),
   rotateGatewayClientCredentials: vi.fn(),
   setGatewayClientEnabled: vi.fn(),
@@ -17,17 +19,20 @@ const mocks = vi.hoisted(() => ({
   updateGatewayClientPolicy: vi.fn(),
   updateVlessProfile: vi.fn(),
   applyXrayProfile: vi.fn(),
+  getClientTrafficStats: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
   createGatewayClient: mocks.createGatewayClient,
   deleteGatewayClient: mocks.deleteGatewayClient,
   ensureVlessProfile: mocks.ensureVlessProfile,
+  getGatewayClientById: mocks.getGatewayClientById,
   listGatewayClients: mocks.listGatewayClients,
   listSubscriptionEventsForClient: mocks.listSubscriptionEventsForClient,
   regenerateGatewayProtocolCredential: mocks.regenerateGatewayProtocolCredential,
   regenerateSubscriptionToken: mocks.regenerateSubscriptionToken,
   regenerateVlessUuid: mocks.regenerateVlessUuid,
+  resetGatewayClientTrafficUsage: mocks.resetGatewayClientTrafficUsage,
   revokeGatewayClient: mocks.revokeGatewayClient,
   rotateGatewayClientCredentials: mocks.rotateGatewayClientCredentials,
   setGatewayClientEnabled: mocks.setGatewayClientEnabled,
@@ -45,7 +50,7 @@ vi.mock("./vless", () => ({
   normaliseWsPath: vi.fn((value: string) => value),
 }));
 
-vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile }));
+vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile, getClientTrafficStats: mocks.getClientTrafficStats, enforceGatewayTrafficQuotas: vi.fn() }));
 
 import { vlessRouter } from "./routers/vless";
 
@@ -118,6 +123,9 @@ describe("client lifecycle mutations", () => {
     });
     mocks.deleteGatewayClient.mockResolvedValue(undefined);
     mocks.applyXrayProfile.mockResolvedValue(undefined);
+    mocks.getGatewayClientById.mockResolvedValue(storedClient);
+    mocks.getClientTrafficStats.mockResolvedValue(new Map([[storedClient.id, 12345]]));
+    mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 12345, quotaExhaustedAt: null });
   });
 
   it("persists a valid traffic and day policy and returns the rendered quota state", async () => {
@@ -147,5 +155,14 @@ describe("client lifecycle mutations", () => {
 
     expect(mocks.deleteGatewayClient).toHaveBeenCalledWith(storedClient.id);
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
+  });
+
+  it("resets recorded usage against the current Xray counter baseline without changing client policy", async () => {
+    const caller = vlessRouter.createCaller(adminContext());
+    const result = await caller.resetClientUsage({ id: storedClient.id });
+
+    expect(mocks.getClientTrafficStats).toHaveBeenCalledWith([storedClient]);
+    expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id, 12345);
+    expect(result).toMatchObject({ id: storedClient.id, trafficUsedBytes: 0, trafficLimitBytes: -1, dayLimit: -1 });
   });
 });

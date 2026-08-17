@@ -138,8 +138,10 @@ export function buildClientSubscriptionPayload(profile: VlessProfile, client: Ga
   return Buffer.from([details.vlessUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
 }
 
-export function clientTrafficEmail(clientId: number) {
-  return `gateway-client-${clientId}@local.invalid`;
+export type TrafficProtocol = "vless" | "vmess" | "trojan";
+
+export function clientTrafficEmail(clientId: number, protocol: TrafficProtocol = "vless") {
+  return `gateway-client-${clientId}-${protocol}@local.invalid`;
 }
 
 export function buildSubscriptionPayload(profile: VlessProfile) {
@@ -185,7 +187,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         settings: {
           clients: [
             ...(globalClientEnabled ? [{ id: profile.uuid }] : []),
-            ...activeClients.map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id), level: 0 })),
+            ...activeClients.map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id, "vless"), level: 0 })),
           ],
           decryption: "none",
         },
@@ -198,7 +200,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         protocol: "vmess",
         settings: { clients: [
           ...(globalClientEnabled ? [{ id: profile.vmessUuid, level: 0 }] : []),
-          ...activeClients.map(client => ({ id: client.vmessUuid, email: clientTrafficEmail(client.id), level: 0 })),
+          ...activeClients.map(client => ({ id: client.vmessUuid, email: clientTrafficEmail(client.id, "vmess"), level: 0 })),
         ] },
         streamSettings: streamSettings(profile.vmessWsPath),
       },
@@ -209,7 +211,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         protocol: "trojan",
         settings: { clients: [
           ...(globalClientEnabled ? [{ password: profile.trojanPassword }] : []),
-          ...activeClients.map(client => ({ password: client.trojanPassword, email: clientTrafficEmail(client.id), level: 0 })),
+          ...activeClients.map(client => ({ password: client.trojanPassword, email: clientTrafficEmail(client.id, "trojan"), level: 0 })),
         ] },
         streamSettings: streamSettings(profile.trojanWsPath),
       },

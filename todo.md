@@ -83,3 +83,7 @@
 - [x] Correct the per-client traffic counter accounting so persisted usage reflects measured transfer deltas without duplicate accumulation across runtime resets or repeated samples.
 - [x] Add deterministic active WebSocket bridge-tunnel closure on quota-triggered Xray reload and cover it with regression tests.
 - [x] Add regression assertions confirming simplified browser subscription status omits endpoint, delivery-count, and last-delivery blocks.
+- [x] Add an owner-only per-client Reset usage action that clears usage and establishes a fresh traffic-counter baseline without changing client credentials or quota policy.
+- [x] Diagnose and correct the anomalous high usage recorded for the affected named client without altering that client’s credentials or policy.
+- [ ] Add deterministic regression coverage proving VLESS, VMess, and Trojan counters for one client are attributed separately and summed only once.
+- [ ] Verify the affected client’s live post-fix Xray counter behavior after protocol-specific runtime identities are deployed.

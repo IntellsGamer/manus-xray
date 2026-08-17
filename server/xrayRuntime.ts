@@ -6,7 +6,7 @@ import { promisify } from "util";
 import net from "net";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { disableGatewayClientForQuota, listGatewayClients, recordGatewayClientTrafficUsage } from "./db";
-import { buildXrayConfig, clientTrafficEmail } from "./vless";
+import { buildXrayConfig, clientTrafficEmail, type TrafficProtocol } from "./vless";
 import { closeActiveGatewayTunnels } from "./gatewayTunnels";
 
 let runningProcess: ChildProcess | undefined;
@@ -39,7 +39,8 @@ function safeCounter(value: unknown) {
 
 export function parseClientTrafficStats(payload: string, clients: Pick<GatewayClient, "id">[]) {
   const totals = new Map<number, number>();
-  const emailToId = new Map(clients.map(client => [clientTrafficEmail(client.id), client.id]));
+  const protocols: TrafficProtocol[] = ["vless", "vmess", "trojan"];
+  const emailToId = new Map(clients.flatMap(client => protocols.map(protocol => [clientTrafficEmail(client.id, protocol), client.id] as const)));
   const parsed = JSON.parse(payload) as { stat?: Array<{ name?: unknown; value?: unknown }> };
   for (const entry of parsed.stat || []) {
     if (typeof entry.name !== "string") continue;
@@ -95,13 +96,19 @@ export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrid
   const closeTunnels = overrides.closeTunnels ?? closeActiveGatewayTunnels;
   const clients = await listClients();
   const usage = await syncUsage(clients);
-  if (!usage) return { trafficUsageAvailable: false, disabledClientIds: [] as number[] };
+  if (!usage) {
+    await applyProfile(profile);
+    return { trafficUsageAvailable: false, disabledClientIds: [] as number[] };
+  }
 
   const exhausted = clients.filter(client => {
     if (!client.enabled || client.trafficLimitBytes < 0) return false;
     return (usage.get(client.id) ?? client.trafficUsedBytes) >= client.trafficLimitBytes;
   });
-  if (exhausted.length === 0) return { trafficUsageAvailable: true, disabledClientIds: [] as number[] };
+  if (exhausted.length === 0) {
+    await applyProfile(profile);
+    return { trafficUsageAvailable: true, disabledClientIds: [] as number[] };
+  }
 
   for (const client of exhausted) await disableClient(client.id);
   closeTunnels();

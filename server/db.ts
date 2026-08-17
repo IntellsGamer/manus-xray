@@ -355,6 +355,20 @@ export async function recordGatewayClientTrafficUsage(client: GatewayClient, rep
   return updated.trafficUsedBytes;
 }
 
+export async function resetGatewayClientTrafficUsage(id: number, reportedBytes: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const baseline = Math.max(0, Math.min(Math.floor(reportedBytes), Number.MAX_SAFE_INTEGER));
+  await db.update(gatewayClients).set({
+    trafficUsedBytes: 0,
+    trafficStatsSnapshotBytes: baseline,
+    quotaExhaustedAt: null,
+  }).where(eq(gatewayClients.id, id));
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found");
+  return client;
+}
+
 export async function disableGatewayClientForQuota(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");

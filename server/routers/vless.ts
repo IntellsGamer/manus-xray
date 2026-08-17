@@ -3,11 +3,13 @@ import {
   createGatewayClient,
   deleteGatewayClient,
   ensureVlessProfile,
+  getGatewayClientById,
   listGatewayClients,
   listSubscriptionEventsForClient,
   regenerateGatewayProtocolCredential,
   regenerateSubscriptionToken,
   regenerateVlessUuid,
+  resetGatewayClientTrafficUsage,
   revokeGatewayClient,
   rotateGatewayClientCredentials,
   setGatewayClientEnabled,
@@ -17,7 +19,7 @@ import {
 } from "../db";
 import { adminProcedure, router } from "../_core/trpc";
 import { buildClientConnectionDetails, buildSocksClientConfig, buildTrojanUri, buildVlessUri, buildVmessUri, normaliseWsPath } from "../vless";
-import { applyXrayProfile, enforceGatewayTrafficQuotas, getXrayRuntimeStatus } from "../xrayRuntime";
+import { applyXrayProfile, enforceGatewayTrafficQuotas, getClientTrafficStats, getXrayRuntimeStatus } from "../xrayRuntime";
 
 const profileInput = z.object({
   serverAddress: z.string().trim().min(1).max(255),
@@ -166,5 +168,14 @@ export const vlessRouter = router({
     const client = await updateGatewayClientPolicy(input.id, input);
     await applyXrayProfile(profile);
     return presentClient(profile, client);
+  }),
+  resetClientUsage: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const profile = await profileForRequest(ctx.req.headers);
+    const client = await getGatewayClientById(input.id);
+    if (!client) throw new Error("Gateway client was not found");
+    const counters = await getClientTrafficStats([client]);
+    if (!counters) throw new Error("Traffic sampler is unavailable; usage was not reset");
+    const reset = await resetGatewayClientTrafficUsage(input.id, counters.get(input.id) || 0);
+    return presentClient(profile, reset, true);
   }),
 });
