@@ -118,3 +118,4 @@
 - [x] Add a real concurrent VLESS-and-VMess finite-rate bridge test proving both protocols consume the same client Mbps budget.
 - [x] Rerun full verification after the cross-protocol shared-budget regression is added.
 - [x] Show each client’s configured Mbps limit in the browser-facing Gateway subscription status page, with `-1` rendered as unlimited.
+- [x] Make icons in destructive and sign-out actions inherit the same red danger color as their labels across the admin interface.
