@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { registerSubscriptionRoute } from "../subscription";
 import { getVlessProfile } from "../db";
 import { applyXrayProfile, stopXrayRuntime } from "../xrayRuntime";
+import { registerVlessUpgradeProxy } from "../vlessUpgradeProxy";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -56,6 +57,7 @@ async function startServer() {
   }
 
   if (process.env.XRAY_RUNTIME_ENABLED === "true") {
+    registerVlessUpgradeProxy(server);
     try {
       const profile = await getVlessProfile();
       if (profile) await applyXrayProfile(profile);

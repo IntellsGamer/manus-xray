@@ -14,5 +14,6 @@ RUN npm install -g corepack@latest && corepack pnpm install && corepack pnpm run
 
 ENV NODE_ENV=production \
     XRAY_BINARY_PATH=/usr/local/bin/xray \
+    XRAY_INTERNAL_PORT=10000 \
     XRAY_RUNTIME_ENABLED=true
 CMD ["node", "dist/index.js"]

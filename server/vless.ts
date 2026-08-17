@@ -1,11 +1,6 @@
 import { randomBytes, randomUUID } from "crypto";
 import type { VlessProfile } from "../drizzle/schema";
 
-export type XrayTlsFiles = {
-  certificateFile?: string;
-  keyFile?: string;
-};
-
 export function createVlessUuid() {
   return randomUUID();
 }
@@ -34,32 +29,25 @@ export function buildSubscriptionPayload(profile: VlessProfile) {
   return Buffer.from(buildVlessUri(profile), "utf8").toString("base64");
 }
 
-/** Builds an Xray inbound configuration compatible with VLESS over WebSocket. */
-export function buildXrayConfig(profile: VlessProfile, tlsFiles: XrayTlsFiles = {}) {
+/**
+ * Builds the private Xray side of the public HTTPS/WebSocket bridge. TLS is
+ * terminated at the platform edge, therefore this local listener is loopback
+ * only and carries the already-upgraded WebSocket stream without TLS.
+ */
+export function buildXrayConfig(profile: VlessProfile, internalPort: number) {
   const streamSettings: Record<string, unknown> = {
     network: "ws",
-    security: profile.tlsEnabled ? "tls" : "none",
+    security: "none",
     wsSettings: { path: normaliseWsPath(profile.wsPath) },
   };
-
-  if (profile.tlsEnabled && tlsFiles.certificateFile && tlsFiles.keyFile) {
-    streamSettings.tlsSettings = {
-      certificates: [
-        {
-          certificateFile: tlsFiles.certificateFile,
-          keyFile: tlsFiles.keyFile,
-        },
-      ],
-    };
-  }
 
   return {
     log: { loglevel: "warning" },
     inbounds: [
       {
         tag: "vless-in",
-        listen: "0.0.0.0",
-        port: profile.port,
+        listen: "127.0.0.1",
+        port: internalPort,
         protocol: "vless",
         settings: {
           clients: [{ id: profile.uuid }],

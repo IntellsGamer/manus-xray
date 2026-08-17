@@ -1,14 +1,17 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { resolve } from "node:path";
 import { buildXrayConfig } from "../server/vless.ts";
+import { registerVlessUpgradeProxy } from "../server/vlessUpgradeProxy.ts";
 
 const xrayBinary = process.env.XRAY_BINARY_PATH || "/home/ubuntu/xray-validation/xray/xray";
 const workDir = resolve("/tmp/nginx-vless-xray-check");
 const uuid = "51dc1a8e-0667-4ed5-aa36-15c8c5a85125";
 const serverPort = 18080;
 const socksPort = 18081;
+const bridgePort = 18082;
 const profile = {
   id: 1,
   uuid,
@@ -43,9 +46,50 @@ function waitForPort(port) {
   });
 }
 
+function assertWebSocketHandshake(port) {
+  return new Promise((resolveHandshake, rejectHandshake) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    let response = "";
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      rejectHandshake(new Error("Timed out waiting for WebSocket upgrade response"));
+    }, 5000);
+    socket.on("connect", () => {
+      socket.write("GET /vless HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n");
+    });
+    socket.on("data", chunk => {
+      response += chunk.toString("utf8");
+      if (!response.includes("\r\n\r\n")) return;
+      clearTimeout(timeout);
+      socket.destroy();
+      if (!response.startsWith("HTTP/1.1 101")) {
+        rejectHandshake(new Error(`Unexpected WebSocket handshake response: ${response.split("\r\n")[0]}`));
+        return;
+      }
+      resolveHandshake();
+    });
+    socket.on("error", error => {
+      clearTimeout(timeout);
+      rejectHandshake(error);
+    });
+  });
+}
+
 function xrayTest(configPath) {
   const result = spawnSync(xrayBinary, ["run", "-test", "-c", configPath], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`Xray config test failed: ${result.stderr || result.stdout}`);
+}
+
+function runCommand(command, args) {
+  return new Promise((resolveCommand, rejectCommand) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", chunk => { stdout += chunk.toString(); });
+    child.stderr.on("data", chunk => { stderr += chunk.toString(); });
+    child.once("error", rejectCommand);
+    child.once("exit", code => resolveCommand({ code, stdout, stderr }));
+  });
 }
 
 function startXray(configPath, logPath) {
@@ -79,7 +123,7 @@ async function main() {
   const serverConfigPath = resolve(workDir, "server.json");
   const clientConfigPath = resolve(workDir, "client.json");
 
-  await writeFile(serverConfigPath, `${JSON.stringify(buildXrayConfig(profile), null, 2)}\n`);
+  await writeFile(serverConfigPath, `${JSON.stringify(buildXrayConfig(profile, serverPort), null, 2)}\n`);
   await writeFile(clientConfigPath, `${JSON.stringify({
     log: { loglevel: "warning" },
     inbounds: [{
@@ -90,7 +134,7 @@ async function main() {
     }],
     outbounds: [{
       protocol: "vless",
-      settings: { vnext: [{ address: "127.0.0.1", port: serverPort, users: [{ id: uuid, encryption: "none" }] }] },
+      settings: { vnext: [{ address: "127.0.0.1", port: bridgePort, users: [{ id: uuid, encryption: "none" }] }] },
       streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vless" } },
     }],
   }, null, 2)}\n`);
@@ -100,20 +144,36 @@ async function main() {
 
   let server;
   let client;
+  let bridge;
   try {
     server = startXray(serverConfigPath, resolve(workDir, "server.log"));
     await waitForPort(serverPort);
+    bridge = createServer((_request, response) => {
+      response.statusCode = 404;
+      response.end();
+    });
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      applyProfile: async () => undefined,
+      internalPort: () => serverPort,
+    });
+    await new Promise((resolveListen, rejectListen) => {
+      bridge.once("error", rejectListen);
+      bridge.listen(bridgePort, "127.0.0.1", resolveListen);
+    });
+    await assertWebSocketHandshake(bridgePort);
     client = startXray(clientConfigPath, resolve(workDir, "client.log"));
     await waitForPort(socksPort);
 
-    const request = spawnSync("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${socksPort}`, "https://example.com/"], { encoding: "utf8" });
-    if (request.status !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
+    const request = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${socksPort}`, "https://example.com/"]);
+    if (request.code !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
     if (!request.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VLESS transport");
 
-    console.log("Xray config validation and VLESS-over-WebSocket loopback request passed.");
+    console.log("Xray config validation and application WebSocket-to-VLESS loopback request passed.");
   } finally {
     await stop(client);
     await stop(server);
+    await new Promise(resolveClose => bridge?.close(() => resolveClose()));
     const generated = JSON.parse(await readFile(serverConfigPath, "utf8"));
     if (generated.inbounds?.[0]?.settings?.clients?.[0]?.id !== uuid) {
       throw new Error("Generated config did not preserve the client UUID");

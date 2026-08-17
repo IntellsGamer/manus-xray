@@ -11,12 +11,16 @@ let runningConfigHash: string | undefined;
 const xrayBinary = () => process.env.XRAY_BINARY_PATH || "xray";
 const xrayConfigPath = () => resolve(process.env.XRAY_CONFIG_PATH || "/tmp/xray/config.json");
 const runtimeEnabled = () => process.env.XRAY_RUNTIME_ENABLED === "true";
+export const xrayInternalPort = () => {
+  const configured = Number(process.env.XRAY_INTERNAL_PORT || "10000");
+  if (!Number.isInteger(configured) || configured < 1024 || configured > 65535) {
+    throw new Error("XRAY_INTERNAL_PORT must be an integer between 1024 and 65535");
+  }
+  return configured;
+};
 
 function configFor(profile: VlessProfile) {
-  return buildXrayConfig(profile, {
-    certificateFile: process.env.XRAY_TLS_CERT_FILE,
-    keyFile: process.env.XRAY_TLS_KEY_FILE,
-  });
+  return buildXrayConfig(profile, xrayInternalPort());
 }
 
 async function stopProcess() {

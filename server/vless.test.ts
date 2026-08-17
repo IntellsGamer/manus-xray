@@ -31,13 +31,14 @@ describe("VLESS profile serialization", () => {
   });
 
   it("normalizes the WebSocket path and produces a valid VLESS inbound shape", () => {
-    const config = buildXrayConfig(profile) as {
+    const config = buildXrayConfig(profile, 10000) as {
       inbounds: Array<{ port: number; settings: { clients: Array<{ id: string; encryption?: string }> }; streamSettings: { wsSettings: { path: string } } }>;
     };
 
     expect(normaliseWsPath("gateway")).toBe("/gateway");
     expect(normaliseWsPath("/gateway")).toBe("/gateway");
-    expect(config.inbounds[0]?.port).toBe(443);
+    expect(config.inbounds[0]?.port).toBe(10000);
+    expect(config.inbounds[0]?.listen).toBe("127.0.0.1");
     expect(config.inbounds[0]?.settings.clients[0]).toEqual({ id: profile.uuid });
     expect(config.inbounds[0]?.streamSettings.wsSettings.path).toBe("/vless");
   });
