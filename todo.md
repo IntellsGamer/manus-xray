@@ -120,3 +120,4 @@
 - [x] Show each client’s configured Mbps limit in the browser-facing Gateway subscription status page, with `-1` rendered as unlimited.
 - [x] Make icons in destructive and sign-out actions inherit the same red danger color as their labels across the admin interface.
 - [x] Create a client immediately in the UI and database, defer its Xray profile activation by roughly 12 seconds, and prevent failed refreshes from causing duplicate client creation attempts.
+- [x] Replace the client creation and activation toast messages with the requested concise wording.

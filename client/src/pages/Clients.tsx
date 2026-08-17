@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
+import { clientNotifications } from "@/lib/clientNotifications";
 import { Plus, Route, Users } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -49,7 +50,7 @@ export function ClientManagerContent() {
   const activate = trpc.vless.activateClient.useMutation({
     onSuccess: result => {
       if (result.activationPending) return;
-      toast.success("Client activated in Xray");
+      toast.success(clientNotifications.activated);
       refresh();
     },
     onError: error => toast.error(`Client is saved; Xray activation will retry automatically. ${error.message}`),
@@ -64,7 +65,7 @@ export function ClientManagerContent() {
     onSuccess: client => {
       setName(""); setTrafficLimit("-1"); setDayLimit("-1"); setSpeedLimitMbps("-1");
       refresh();
-      toast.success("Client identity created; Xray activates it in about 12 seconds");
+      toast.success(clientNotifications.created);
     },
     onError: error => toast.error(error.message),
   });
