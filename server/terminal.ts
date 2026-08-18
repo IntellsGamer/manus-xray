@@ -296,7 +296,12 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
 
   let user: AuthenticatedUser;
   try {
-    user = await sdk.authenticateRequest(req as Parameters<typeof sdk.authenticateRequest>[0]);
+    const requestUrl = new URL(req.url || TERMINAL_SOCKET_PATH, "http://terminal.local");
+    const terminalTicket = requestUrl.searchParams.get("terminalTicket");
+    const ticketRequest = terminalTicket
+      ? { ...req, headers: { ...req.headers, authorization: `Bearer ${terminalTicket}` } }
+      : req;
+    user = await sdk.authenticateRequest(ticketRequest as Parameters<typeof sdk.authenticateRequest>[0]);
   } catch {
     rejectUpgrade(socket, 401, "Unauthorized");
     return;

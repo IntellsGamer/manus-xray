@@ -16,12 +16,13 @@ type TerminalMessage =
   | { type: "exit"; exitCode: number; signal?: number }
   | { type: "error"; message: string };
 
-function socketUrl(path: string) {
+function socketUrl(path: string, terminalTicket: string) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}${path}`;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${protocol}//${window.location.host}${path}${separator}terminalTicket=${encodeURIComponent(terminalTicket)}`;
 }
 
-function TerminalWorkspace({ socketPath }: { socketPath: string }) {
+function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string; terminalTicket: string }) {
   const terminalHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -202,7 +203,7 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
     setConnectionState("connecting");
     setLastCloseReason(null);
     terminal.focus();
-    const socket = new WebSocket(socketUrl(socketPath));
+    const socket = new WebSocket(socketUrl(socketPath, terminalTicket));
     socketRef.current = socket;
 
     socket.onopen = () => {
@@ -248,7 +249,7 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
       if (socketRef.current === socket) socketRef.current = null;
       socket.close(1000, "Terminal page disposed");
     };
-  }, [socketPath, connectionAttempt]);
+  }, [socketPath, terminalTicket, connectionAttempt]);
 
   const reconnect = () => {
     socketRef.current?.close(1000, "Reconnect requested");
@@ -361,7 +362,7 @@ export default function TerminalPage() {
 
   return (
     <DashboardLayout>
-      <TerminalWorkspace socketPath={authorization.data.socketPath} />
+      <TerminalWorkspace socketPath={authorization.data.socketPath} terminalTicket={authorization.data.terminalTicket} />
     </DashboardLayout>
   );
 }

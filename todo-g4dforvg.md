@@ -16,3 +16,6 @@
 - [x] Show the Terminal route and sidebar entry to every authenticated administrator without owner-device gating.
 - [x] Prevent terminal input/output feedback loops and repeated line rendering that can lag the browser.
 - [x] Verify the administrator terminal route and publish the corrected behavior.
+- [ ] Diagnose and fix the production Terminal WebSocket upgrade rejection.
+- [ ] Eliminate the remaining repeated terminal output/render loop and browser lag.
+- [ ] Verify the repaired production Terminal connection and publish the fix.

@@ -54,10 +54,12 @@ describe("terminal authorization boundary", () => {
 
   it("permits the terminal capability query for an authenticated administrator", async () => {
     const caller = appRouter.createCaller(adminContext("not-the-configured-owner"));
-    await expect(caller.terminal.authorize()).resolves.toEqual({
+    await expect(caller.terminal.authorize()).resolves.toMatchObject({
       permitted: true,
       socketPath: "/api/terminal/socket",
     });
+    const authorization = await caller.terminal.authorize();
+    expect(authorization.terminalTicket).toEqual(expect.any(String));
   });
 });
 
