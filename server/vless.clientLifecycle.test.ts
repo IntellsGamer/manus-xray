@@ -4,7 +4,6 @@ import type { TrpcContext } from "./_core/context";
 const mocks = vi.hoisted(() => ({
   activateGatewayClientIfDue: vi.fn(),
   ensureVlessProfile: vi.fn(),
-  getGatewayClientById: vi.fn(),
   createGatewayClient: vi.fn(),
   deleteGatewayClient: vi.fn(),
   listGatewayClients: vi.fn(),
@@ -21,7 +20,6 @@ const mocks = vi.hoisted(() => ({
   updateGatewayClientPolicy: vi.fn(),
   updateVlessProfile: vi.fn(),
   applyXrayProfile: vi.fn(),
-  getClientTrafficStats: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
@@ -29,7 +27,6 @@ vi.mock("./db", () => ({
   createGatewayClient: mocks.createGatewayClient,
   deleteGatewayClient: mocks.deleteGatewayClient,
   ensureVlessProfile: mocks.ensureVlessProfile,
-  getGatewayClientById: mocks.getGatewayClientById,
   listGatewayClients: mocks.listGatewayClients,
   listSubscriptionEventsForClient: mocks.listSubscriptionEventsForClient,
   markGatewayClientActivationFailed: mocks.markGatewayClientActivationFailed,
@@ -54,7 +51,7 @@ vi.mock("./vless", () => ({
   normaliseWsPath: vi.fn((value: string) => value),
 }));
 
-vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile, enforceGatewayTrafficQuotas: vi.fn(), getClientTrafficStats: mocks.getClientTrafficStats }));
+vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile, enforceGatewayTrafficQuotas: vi.fn(), getXrayRuntimeStatus: vi.fn(() => ({ enabled: false, running: false, statsAvailable: false })) }));
 
 import { vlessRouter } from "./routers/vless";
 
@@ -134,8 +131,6 @@ describe("client lifecycle mutations", () => {
     mocks.activateGatewayClientIfDue.mockResolvedValue({ client: storedClient, activated: true, activationPending: false });
     mocks.markGatewayClientActivationFailed.mockResolvedValue({ ...storedClient, enabled: false, activationDueAt: null, activationFailedAt: new Date() });
     mocks.applyXrayProfile.mockResolvedValue(undefined);
-    mocks.getClientTrafficStats.mockResolvedValue(new Map([[storedClient.id, 0]]));
-    mocks.getGatewayClientById.mockResolvedValue(storedClient);
     mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, quotaExhaustedAt: null });
   });
 
@@ -214,11 +209,11 @@ describe("client lifecycle mutations", () => {
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
   });
 
-  it("resets Xray-sampled usage without changing client policy and records the current counter baseline", async () => {
+  it("resets recorded gateway usage without changing client policy", async () => {
     const caller = vlessRouter.createCaller(adminContext());
     const result = await caller.resetClientUsage({ id: storedClient.id });
 
-    expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id, 0);
+    expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id);
     expect(result).toMatchObject({ id: storedClient.id, trafficUsedBytes: 0, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1 });
   });
 });

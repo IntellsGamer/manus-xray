@@ -20,54 +20,35 @@ describe("Xray client traffic counters", () => {
     expect(counters.get(8)).toBeUndefined();
   });
 
-  it("samples Xray counters, persists their delta, then disables only clients whose finite quota is exhausted", async () => {
+  it("disables only finite-quota clients whose persisted bridge-byte total is exhausted", async () => {
     const clients = [
-      { id: 1, enabled: true, trafficLimitBytes: 1024, trafficUsedBytes: 900, trafficStatsSnapshotBytes: 500 },
+      { id: 1, enabled: true, trafficLimitBytes: 1024, trafficUsedBytes: 1100 },
       { id: 2, enabled: true, trafficLimitBytes: -1, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0 },
     ] as GatewayClient[];
-    const sampled = [{ ...clients[0], trafficUsedBytes: 1100 }, clients[1]] as GatewayClient[];
-    const getTrafficStats = vi.fn().mockResolvedValue(new Map([[1, 700], [2, 500]]));
-    const synchronizeTraffic = vi.fn().mockResolvedValue(sampled);
-    const disableClient = vi.fn().mockResolvedValue(sampled[0]);
+    const disableClient = vi.fn().mockResolvedValue(clients[0]);
     const applyProfile = vi.fn().mockResolvedValue(undefined);
     const closeTunnels = vi.fn().mockReturnValue(1);
 
     const result = await enforceGatewayTrafficQuotas({ id: 1 } as VlessProfile, {
-      listClients: vi.fn().mockResolvedValue(clients), getTrafficStats, synchronizeTraffic, disableClient, applyProfile, closeTunnels,
+      listClients: vi.fn().mockResolvedValue(clients), disableClient, applyProfile, closeTunnels,
     });
 
-    expect(getTrafficStats).toHaveBeenCalledWith(clients);
-    expect(synchronizeTraffic).toHaveBeenCalledWith(clients, new Map([[1, 700], [2, 500]]));
     expect(result).toEqual({ trafficUsageAvailable: true, disabledClientIds: [1] });
     expect(disableClient).toHaveBeenCalledWith(1);
     expect(closeTunnels).toHaveBeenCalledTimes(1);
     expect(applyProfile).toHaveBeenCalledTimes(1);
   });
 
-  it("does not change usage or restart Xray when the local stats service is unavailable", async () => {
-    const synchronizeTraffic = vi.fn();
+  it("does not restart Xray when persisted bridge-byte usage remains below quota", async () => {
     const applyProfile = vi.fn().mockResolvedValue(undefined);
+    const disableClient = vi.fn();
     const result = await enforceGatewayTrafficQuotas({ id: 1 } as VlessProfile, {
-      listClients: vi.fn().mockResolvedValue([{ id: 2, enabled: true, trafficLimitBytes: 1024, trafficUsedBytes: 0 }] as GatewayClient[]),
-      getTrafficStats: vi.fn().mockResolvedValue(null), synchronizeTraffic, applyProfile,
-    });
-
-    expect(result).toEqual({ trafficUsageAvailable: false, disabledClientIds: [] });
-    expect(synchronizeTraffic).not.toHaveBeenCalled();
-    expect(applyProfile).not.toHaveBeenCalled();
-  });
-
-  it("does not restart Xray after a sampled no-op quota check", async () => {
-    const applyProfile = vi.fn().mockResolvedValue(undefined);
-    const clients = [{ id: 2, enabled: true, trafficLimitBytes: -1, trafficUsedBytes: 0 }] as GatewayClient[];
-    const result = await enforceGatewayTrafficQuotas({ id: 1 } as VlessProfile, {
-      listClients: vi.fn().mockResolvedValue(clients),
-      getTrafficStats: vi.fn().mockResolvedValue(new Map([[2, 0]])),
-      synchronizeTraffic: vi.fn().mockResolvedValue(clients),
-      applyProfile,
+      listClients: vi.fn().mockResolvedValue([{ id: 2, enabled: true, trafficLimitBytes: 1024, trafficUsedBytes: 1023 }] as GatewayClient[]),
+      disableClient, applyProfile,
     });
 
     expect(result).toEqual({ trafficUsageAvailable: true, disabledClientIds: [] });
+    expect(disableClient).not.toHaveBeenCalled();
     expect(applyProfile).not.toHaveBeenCalled();
   });
 });

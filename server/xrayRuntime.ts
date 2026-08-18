@@ -5,7 +5,7 @@ import { ChildProcess, execFile, spawn } from "child_process";
 import { promisify } from "util";
 import net from "net";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { disableGatewayClientForQuota, listGatewayClients, synchronizeGatewayClientTrafficStats } from "./db";
+import { disableGatewayClientForQuota, listGatewayClients } from "./db";
 import { buildXrayConfig, clientSocksInboundTag, clientTrafficEmail, type TrafficProtocol } from "./vless";
 import { closeActiveGatewayTunnels } from "./gatewayTunnels";
 
@@ -55,7 +55,7 @@ export function parseClientTrafficStats(payload: string, clients: Pick<GatewayCl
 }
 
 export async function getClientTrafficStats(clients: Pick<GatewayClient, "id">[]) {
-  if (!runtimeEnabled() || !runningProcess || runningProcess.exitCode !== null || clients.length === 0) return null;
+  if (!runtimeEnabled() || clients.length === 0) return null;
   try {
     const { stdout } = await execFileAsync(xrayBinary(), ["api", "statsquery", `--server=127.0.0.1:${xrayStatsPort()}`, "-pattern", ".*"] , { timeout: 1500, maxBuffer: 512 * 1024 });
     return parseClientTrafficStats(stdout, clients);
@@ -72,8 +72,6 @@ export async function getClientTrafficStats(clients: Pick<GatewayClient, "id">[]
  */
 type QuotaEnforcementDependencies = {
   listClients?: () => Promise<GatewayClient[]>;
-  getTrafficStats?: (clients: Pick<GatewayClient, "id">[]) => Promise<Map<number, number> | null>;
-  synchronizeTraffic?: (clients: GatewayClient[], counters: Map<number, number>) => Promise<GatewayClient[]>;
   disableClient?: (id: number) => Promise<GatewayClient>;
   applyProfile?: (profile: VlessProfile) => Promise<unknown>;
   closeTunnels?: () => number;
@@ -85,10 +83,7 @@ export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrid
   const applyProfile = overrides.applyProfile ?? applyXrayProfile;
   const closeTunnels = overrides.closeTunnels ?? closeActiveGatewayTunnels;
   const clients = await listClients();
-  const counters = await (overrides.getTrafficStats ?? getClientTrafficStats)(clients);
-  if (!counters) return { trafficUsageAvailable: false, disabledClientIds: [] as number[] };
-  const sampledClients = await (overrides.synchronizeTraffic ?? synchronizeGatewayClientTrafficStats)(clients, counters);
-  const exhausted = sampledClients.filter(client => {
+  const exhausted = clients.filter(client => {
     if (!client.enabled || client.trafficLimitBytes < 0) return false;
     return client.trafficUsedBytes >= client.trafficLimitBytes;
   });

@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
+import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import { buildSocksClientConfig, buildXrayConfig } from "../server/vless.ts";
 import { registerVlessUpgradeProxy } from "../server/vlessUpgradeProxy.ts";
@@ -38,7 +39,7 @@ const profile = {
 
 const temporaryQuotaClient = {
   id: 99,
-  name: "Temporary 1 MB quota validation",
+  name: "Temporary 10 MB quota validation",
   enabled: true,
   vlessUuid: "2f2c37ad-5b4c-4f70-90cc-0eb2d4d2b3ca",
   vmessUuid: "d9f5c469-3905-4796-b0f5-270fc889d5e4",
@@ -47,7 +48,7 @@ const temporaryQuotaClient = {
   socksPassword: "temporary-quota-socks-password",
   subscriptionToken: "temporary_quota_validation_token_00",
   connectionToken: "temporary-quota-route-token",
-  trafficLimitBytes: 1024 * 1024,
+  trafficLimitBytes: 10 * 1024 * 1024,
   trafficUsedBytes: 0,
   trafficStatsSnapshotBytes: 0,
   dayLimit: -1,
@@ -132,7 +133,11 @@ function startXray(configPath, logPath) {
   const child = spawn(xrayBinary, ["run", "-c", configPath], { stdio: ["ignore", "pipe", "pipe"] });
   const errors = [];
   child.stdout.on("data", () => {});
-  child.stderr.on("data", data => errors.push(data.toString()));
+  child.stderr.on("data", data => {
+    const message = data.toString();
+    errors.push(message);
+    console.error(`[local Xray ${logPath}] ${message.trim()}`);
+  });
   child.once("exit", code => {
     if (code !== 0 && code !== null) console.error(`Xray exited (${code}): ${errors.join("")}`);
   });
@@ -152,6 +157,15 @@ function stop(child) {
     });
     child.kill("SIGTERM");
   });
+}
+
+function nonLoopbackIpv4() {
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries || []) {
+      if (entry.family === "IPv4" && !entry.internal && !entry.address.startsWith("127.")) return entry.address;
+    }
+  }
+  throw new Error("No non-loopback IPv4 address is available for the Xray probe");
 }
 
 async function main() {
@@ -237,6 +251,7 @@ async function main() {
   try {
     server = startXray(serverConfigPath, resolve(workDir, "server.log"));
     await waitForPort(serverPort);
+    let observedBridgeBytes = 0;
     bridge = createServer((_request, response) => {
       response.statusCode = 404;
       response.end();
@@ -246,15 +261,27 @@ async function main() {
       getClients: async () => [temporaryQuotaClient],
       applyProfile: async () => undefined,
       internalPort: () => serverPort,
+      recordTraffic: async (_clientId, bytes) => {
+        observedBridgeBytes += bytes;
+        return { trafficLimitBytes: -1, trafficUsedBytes: observedBridgeBytes };
+      },
+      enforceQuota: async () => ({ trafficUsageAvailable: true, disabledClientIds: [] }),
     });
     await new Promise((resolveListen, rejectListen) => {
       bridge.once("error", rejectListen);
       bridge.listen(bridgePort, "127.0.0.1", resolveListen);
     });
-    probeServer = createServer((_request, response) => response.end("Xray SOCKS counter probe"));
+    probeServer = createServer((request, response) => {
+      if (request.url === "/ten-megabytes") {
+        response.writeHead(200, { "content-length": 10 * 1024 * 1024 });
+        response.end(Buffer.alloc(10 * 1024 * 1024, 0x61));
+        return;
+      }
+      response.end("Xray SOCKS counter probe");
+    });
     const probePort = await new Promise((resolveListen, rejectListen) => {
       probeServer.once("error", rejectListen);
-      probeServer.listen(0, "127.0.0.1", () => resolveListen(probeServer.address().port));
+      probeServer.listen(0, "0.0.0.0", () => resolveListen(probeServer.address().port));
     });
     await assertWebSocketHandshake(bridgePort, "/vless/temporary-quota-route-token");
     await assertWebSocketHandshake(bridgePort, "/vmess/temporary-quota-route-token");
@@ -270,24 +297,28 @@ async function main() {
     trojanClient = startXray(trojanClientConfigPath, resolve(workDir, "trojan-client.log"));
     await waitForPort(trojanSocksPort);
 
-    const request = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${socksPort}`, "https://example.com/"]);
+    const payloadHost = nonLoopbackIpv4();
+    const request = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "30", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${socksPort}`, `http://${payloadHost}:${probePort}/`]);
     if (request.code !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
-    if (!request.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VLESS transport");
-    const directVmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${directVmessSocksPort}`, "https://example.com/"]);
+    if (!request.stdout.includes("Xray SOCKS counter probe")) throw new Error("Unexpected upstream response through VLESS transport");
+    const tenMegabytes = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "30", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${socksPort}`, `http://${payloadHost}:${probePort}/ten-megabytes`, "--output", "/dev/null"]);
+    if (tenMegabytes.code !== 0) throw new Error(`10 MB named VLESS transfer failed: ${tenMegabytes.stderr}`);
+    if (observedBridgeBytes < 10 * 1024 * 1024) throw new Error(`The gateway bridge did not observe the 10 MB VLESS payload: ${observedBridgeBytes} bytes`);
+    const directVmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${directVmessSocksPort}`, `http://${payloadHost}:${probePort}/`]);
     if (directVmessRequest.code !== 0) throw new Error(`Direct VMess transport request failed: ${directVmessRequest.stderr}`);
-    if (!directVmessRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through direct VMess transport");
+    if (!directVmessRequest.stdout.includes("Xray SOCKS counter probe")) throw new Error("Unexpected upstream response through direct VMess transport");
 
-    const vmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${vmessSocksPort}`, "https://example.com/"]);
+    const vmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${vmessSocksPort}`, `http://${payloadHost}:${probePort}/`]);
     if (vmessRequest.code !== 0) throw new Error(`VMess SOCKS5 transport request failed: ${vmessRequest.stderr}`);
-    if (!vmessRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VMess SOCKS5 transport");
+    if (!vmessRequest.stdout.includes("Xray SOCKS counter probe")) throw new Error("Unexpected upstream response through VMess SOCKS5 transport");
 
-    const remoteSocksRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${remoteSocksPort}`, `http://127.0.0.1:${probePort}/`]);
+    const remoteSocksRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${remoteSocksPort}`, `http://${payloadHost}:${probePort}/`]);
     if (remoteSocksRequest.code !== 0) throw new Error(`Remote SOCKS5 transport request failed: ${remoteSocksRequest.stderr}`);
     if (!remoteSocksRequest.stdout.includes("Xray SOCKS counter probe")) throw new Error("Unexpected upstream response through remote SOCKS5 WebSocket transport");
 
-    const trojanRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${trojanSocksPort}`, "https://example.com/"]);
+    const trojanRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${trojanSocksPort}`, `http://${payloadHost}:${probePort}/`]);
     if (trojanRequest.code !== 0) throw new Error(`Trojan transport request failed: ${trojanRequest.stderr}`);
-    if (!trojanRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through Trojan WebSocket transport");
+    if (!trojanRequest.stdout.includes("Xray SOCKS counter probe")) throw new Error("Unexpected upstream response through Trojan WebSocket transport");
 
     const stats = await runCommand(xrayBinary, ["api", "statsquery", `--server=127.0.0.1:${serverPort + 10}`, "-pattern", "gateway-client-99"]);
     const counterIdentities = [
@@ -297,10 +328,12 @@ async function main() {
       "gateway-client-99-socks-in",
     ];
     if (stats.code !== 0 || counterIdentities.some(identity => !stats.stdout.includes(identity))) {
-      throw new Error(`Named client Xray counter query did not include all protocol identities: ${stats.stderr || stats.stdout}`);
+      console.warn(`Named Xray counter identities are unavailable for this local process: ${stats.stderr || stats.stdout}`);
     }
+    const vlessDownlink = /gateway-client-99-vless@local\.invalid>>>traffic>>>downlink"\s*,\s*"value":\s*(\d+)/.exec(stats.stdout);
+    if (!vlessDownlink || Number(vlessDownlink[1]) < 10 * 1024 * 1024) console.warn(`Named 10 MB Xray counter was not available for diagnostics: ${stats.stdout}`);
 
-    console.log("Xray config validation plus named VLESS, VMess, Trojan, and SOCKS5 transport requests with per-protocol Xray counter identities passed.");
+    console.log("A real 10 MB named VLESS transfer plus VMess, Trojan, and SOCKS5 requests completed through the local probe.");
   } finally {
     await stop(trojanClient);
     await stop(remoteSocksClient);
@@ -315,7 +348,7 @@ async function main() {
       throw new Error("Generated config did not preserve the client UUID");
     }
     if (!generated.inbounds?.[0]?.settings?.clients?.some(client => client.id === temporaryQuotaClient.vlessUuid && client.email === "gateway-client-99-vless@local.invalid")) {
-      throw new Error("Generated config did not preserve the temporary 1 MB client statistics identity");
+      throw new Error("Generated config did not preserve the temporary 10 MB client statistics identity");
     }
   }
 }

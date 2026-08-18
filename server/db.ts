@@ -412,14 +412,30 @@ export async function synchronizeGatewayClientTrafficStats(clients: GatewayClien
   return listGatewayClients();
 }
 
-export async function resetGatewayClientTrafficUsage(id: number, counterBaseline?: number) {
+/** Atomically adds backend-observed bidirectional bridge bytes for one named client. */
+export async function recordGatewayClientTunnelTraffic(id: number, observedBytes: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const delta = Math.max(0, Math.min(Math.floor(observedBytes), Number.MAX_SAFE_INTEGER));
+  if (delta === 0) {
+    const unchanged = await getGatewayClientById(id);
+    if (!unchanged) throw new Error("Gateway client was not found");
+    return unchanged;
+  }
+  await db.update(gatewayClients).set({
+    trafficUsedBytes: sql`LEAST(${gatewayClients.trafficUsedBytes} + ${delta}, ${Number.MAX_SAFE_INTEGER})`,
+  }).where(eq(gatewayClients.id, id));
+  const updated = await getGatewayClientById(id);
+  if (!updated) throw new Error("Gateway client was not found");
+  return updated;
+}
+
+export async function resetGatewayClientTrafficUsage(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   await db.update(gatewayClients).set({
     trafficUsedBytes: 0,
-    trafficStatsSnapshotBytes: counterBaseline === undefined
-      ? sql`${gatewayClients.trafficStatsSnapshotBytes}`
-      : Math.max(0, Math.min(Math.floor(counterBaseline), Number.MAX_SAFE_INTEGER)),
+    trafficStatsSnapshotBytes: 0,
     quotaExhaustedAt: null,
   }).where(eq(gatewayClients.id, id));
   const client = await getGatewayClientById(id);
