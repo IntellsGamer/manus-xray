@@ -95,13 +95,14 @@ describe("VLESS profile serialization", () => {
 
   it("isolates named credentials and excludes global credentials when the global profile is disabled", () => {
     const disabledGlobal = { ...profile, globalProfileEnabled: false };
-    const config = buildXrayConfig(disabledGlobal, 10000, [namedClient]) as { inbounds: Array<{ settings: { clients?: Array<{ id?: string; password?: string }>; accounts?: Array<{ user: string }> } }> };
+    const config = buildXrayConfig(disabledGlobal, 10000, [namedClient]) as { inbounds: Array<{ tag?: string; port?: number; settings: { clients?: Array<{ id?: string; password?: string }>; accounts?: Array<{ user: string }> } }> };
     const clientDetails = buildClientConnectionDetails(profile, namedClient);
 
     expect(config.inbounds[0]?.settings.clients).toEqual([{ id: namedClient.vlessUuid, email: `gateway-client-${namedClient.id}-vless@local.invalid`, level: 0 }]);
     expect(config.inbounds[1]?.settings.clients).toEqual([{ id: namedClient.vmessUuid, email: `gateway-client-${namedClient.id}-vmess@local.invalid`, level: 0 }]);
     expect(config.inbounds[2]?.settings.clients).toEqual([{ password: namedClient.trojanPassword, email: `gateway-client-${namedClient.id}-trojan@local.invalid`, level: 0 }]);
-    expect(config.inbounds[3]?.settings.accounts).toEqual([{ user: namedClient.socksUsername, pass: namedClient.socksPassword }]);
+    expect(config.inbounds[3]?.settings.accounts).toEqual([]);
+    expect(config.inbounds[4]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 10109, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
     expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
     expect(new URL(clientDetails.vlessUri).searchParams.get("path")).toBe("/vless/named-client-route-token");
     expect(JSON.parse(Buffer.from(clientDetails.vmessUri.replace("vmess://", ""), "base64").toString("utf8")).path).toBe("/vmess/named-client-route-token");

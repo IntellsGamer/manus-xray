@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   updateGatewayClientPolicy: vi.fn(),
   updateVlessProfile: vi.fn(),
   applyXrayProfile: vi.fn(),
+  getClientTrafficStats: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
@@ -53,7 +54,7 @@ vi.mock("./vless", () => ({
   normaliseWsPath: vi.fn((value: string) => value),
 }));
 
-vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile, enforceGatewayTrafficQuotas: vi.fn() }));
+vi.mock("./xrayRuntime", () => ({ applyXrayProfile: mocks.applyXrayProfile, enforceGatewayTrafficQuotas: vi.fn(), getClientTrafficStats: mocks.getClientTrafficStats }));
 
 import { vlessRouter } from "./routers/vless";
 
@@ -133,6 +134,7 @@ describe("client lifecycle mutations", () => {
     mocks.activateGatewayClientIfDue.mockResolvedValue({ client: storedClient, activated: true, activationPending: false });
     mocks.markGatewayClientActivationFailed.mockResolvedValue({ ...storedClient, enabled: false, activationDueAt: null, activationFailedAt: new Date() });
     mocks.applyXrayProfile.mockResolvedValue(undefined);
+    mocks.getClientTrafficStats.mockResolvedValue(new Map([[storedClient.id, 0]]));
     mocks.getGatewayClientById.mockResolvedValue(storedClient);
     mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, quotaExhaustedAt: null });
   });
@@ -212,11 +214,11 @@ describe("client lifecycle mutations", () => {
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
   });
 
-  it("resets backend-recorded usage without changing client policy", async () => {
+  it("resets Xray-sampled usage without changing client policy and records the current counter baseline", async () => {
     const caller = vlessRouter.createCaller(adminContext());
     const result = await caller.resetClientUsage({ id: storedClient.id });
 
-    expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id);
+    expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id, 0);
     expect(result).toMatchObject({ id: storedClient.id, trafficUsedBytes: 0, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1 });
   });
 });

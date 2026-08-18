@@ -395,30 +395,31 @@ export async function updateGatewayClientPolicy(id: number, input: { trafficLimi
   return client;
 }
 
-/** Atomically adds backend-observed bidirectional bridge bytes for one named client. */
-export async function recordGatewayClientTunnelTraffic(id: number, observedBytes: number) {
+/**
+ * Persists deltas from Xray's monotonic per-client counters. When Xray restarts
+ * its counters reset, so a smaller observed value begins a new counter epoch.
+ */
+export async function synchronizeGatewayClientTrafficStats(clients: GatewayClient[], counters: Map<number, number>) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
-  const delta = Math.max(0, Math.min(Math.floor(observedBytes), Number.MAX_SAFE_INTEGER));
-  if (delta === 0) {
-    const unchanged = await getGatewayClientById(id);
-    if (!unchanged) throw new Error("Gateway client was not found");
-    return unchanged;
+  for (const client of clients) {
+    const observed = Math.max(0, Math.min(Math.floor(counters.get(client.id) ?? 0), Number.MAX_SAFE_INTEGER));
+    await db.update(gatewayClients).set({
+      trafficUsedBytes: sql`LEAST(${gatewayClients.trafficUsedBytes} + CASE WHEN ${observed} >= ${gatewayClients.trafficStatsSnapshotBytes} THEN ${observed} - ${gatewayClients.trafficStatsSnapshotBytes} ELSE ${observed} END, ${Number.MAX_SAFE_INTEGER})`,
+      trafficStatsSnapshotBytes: observed,
+    }).where(eq(gatewayClients.id, client.id));
   }
-  await db.update(gatewayClients).set({
-    trafficUsedBytes: sql`LEAST(${gatewayClients.trafficUsedBytes} + ${delta}, ${Number.MAX_SAFE_INTEGER})`,
-  }).where(eq(gatewayClients.id, id));
-  const updated = await getGatewayClientById(id);
-  if (!updated) throw new Error("Gateway client was not found");
-  return updated;
+  return listGatewayClients();
 }
 
-export async function resetGatewayClientTrafficUsage(id: number) {
+export async function resetGatewayClientTrafficUsage(id: number, counterBaseline?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   await db.update(gatewayClients).set({
     trafficUsedBytes: 0,
-    trafficStatsSnapshotBytes: 0,
+    trafficStatsSnapshotBytes: counterBaseline === undefined
+      ? sql`${gatewayClients.trafficStatsSnapshotBytes}`
+      : Math.max(0, Math.min(Math.floor(counterBaseline), Number.MAX_SAFE_INTEGER)),
     quotaExhaustedAt: null,
   }).where(eq(gatewayClients.id, id));
   const client = await getGatewayClientById(id);

@@ -5,8 +5,8 @@ import { ChildProcess, execFile, spawn } from "child_process";
 import { promisify } from "util";
 import net from "net";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { disableGatewayClientForQuota, listGatewayClients } from "./db";
-import { buildXrayConfig, clientTrafficEmail, type TrafficProtocol } from "./vless";
+import { disableGatewayClientForQuota, listGatewayClients, synchronizeGatewayClientTrafficStats } from "./db";
+import { buildXrayConfig, clientSocksInboundTag, clientTrafficEmail, type TrafficProtocol } from "./vless";
 import { closeActiveGatewayTunnels } from "./gatewayTunnels";
 
 let runningProcess: ChildProcess | undefined;
@@ -41,12 +41,13 @@ export function parseClientTrafficStats(payload: string, clients: Pick<GatewayCl
   const totals = new Map<number, number>();
   const protocols: TrafficProtocol[] = ["vless", "vmess", "trojan"];
   const emailToId = new Map(clients.flatMap(client => protocols.map(protocol => [clientTrafficEmail(client.id, protocol), client.id] as const)));
+  const socksTagToId = new Map(clients.map(client => [clientSocksInboundTag(client.id), client.id] as const));
   const parsed = JSON.parse(payload) as { stat?: Array<{ name?: unknown; value?: unknown }> };
   for (const entry of parsed.stat || []) {
     if (typeof entry.name !== "string") continue;
-    const match = /^user>>>([^>]+)>>>traffic>>>(uplink|downlink)$/.exec(entry.name);
-    if (!match) continue;
-    const clientId = emailToId.get(match[1]);
+    const userMatch = /^user>>>([^>]+)>>>traffic>>>(uplink|downlink)$/.exec(entry.name);
+    const inboundMatch = /^inbound>>>([^>]+)>>>traffic>>>(uplink|downlink)$/.exec(entry.name);
+    const clientId = userMatch ? emailToId.get(userMatch[1]) : inboundMatch ? socksTagToId.get(inboundMatch[1]) : undefined;
     if (!clientId) continue;
     totals.set(clientId, (totals.get(clientId) || 0) + safeCounter(entry.value));
   }
@@ -56,7 +57,7 @@ export function parseClientTrafficStats(payload: string, clients: Pick<GatewayCl
 export async function getClientTrafficStats(clients: Pick<GatewayClient, "id">[]) {
   if (!runtimeEnabled() || !runningProcess || runningProcess.exitCode !== null || clients.length === 0) return null;
   try {
-    const { stdout } = await execFileAsync(xrayBinary(), ["api", "statsquery", `--server=127.0.0.1:${xrayStatsPort()}`, "-pattern", "user>>>"] , { timeout: 1500, maxBuffer: 512 * 1024 });
+    const { stdout } = await execFileAsync(xrayBinary(), ["api", "statsquery", `--server=127.0.0.1:${xrayStatsPort()}`, "-pattern", ".*"] , { timeout: 1500, maxBuffer: 512 * 1024 });
     return parseClientTrafficStats(stdout, clients);
   } catch (error) {
     console.warn("[Xray] Unable to query local client traffic statistics:", error instanceof Error ? error.message : error);
@@ -71,6 +72,8 @@ export async function getClientTrafficStats(clients: Pick<GatewayClient, "id">[]
  */
 type QuotaEnforcementDependencies = {
   listClients?: () => Promise<GatewayClient[]>;
+  getTrafficStats?: (clients: Pick<GatewayClient, "id">[]) => Promise<Map<number, number> | null>;
+  synchronizeTraffic?: (clients: GatewayClient[], counters: Map<number, number>) => Promise<GatewayClient[]>;
   disableClient?: (id: number) => Promise<GatewayClient>;
   applyProfile?: (profile: VlessProfile) => Promise<unknown>;
   closeTunnels?: () => number;
@@ -82,7 +85,10 @@ export async function enforceGatewayTrafficQuotas(profile: VlessProfile, overrid
   const applyProfile = overrides.applyProfile ?? applyXrayProfile;
   const closeTunnels = overrides.closeTunnels ?? closeActiveGatewayTunnels;
   const clients = await listClients();
-  const exhausted = clients.filter(client => {
+  const counters = await (overrides.getTrafficStats ?? getClientTrafficStats)(clients);
+  if (!counters) return { trafficUsageAvailable: false, disabledClientIds: [] as number[] };
+  const sampledClients = await (overrides.synchronizeTraffic ?? synchronizeGatewayClientTrafficStats)(clients, counters);
+  const exhausted = sampledClients.filter(client => {
     if (!client.enabled || client.trafficLimitBytes < 0) return false;
     return client.trafficUsedBytes >= client.trafficLimitBytes;
   });

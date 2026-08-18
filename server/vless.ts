@@ -188,6 +188,14 @@ export function clientTrafficEmail(clientId: number, protocol: TrafficProtocol =
   return `gateway-client-${clientId}-${protocol}@local.invalid`;
 }
 
+export function clientSocksInboundTag(clientId: number) {
+  return `gateway-client-${clientId}-socks-in`;
+}
+
+export function clientSocksInboundPort(internalPort: number, clientId: number) {
+  return internalPort + 100 + clientId;
+}
+
 export function buildSubscriptionPayload(profile: VlessProfile) {
   const details = buildGatewayConnectionDetails(profile);
   return Buffer.from([details.vlessUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
@@ -220,7 +228,12 @@ export function resolvePublicGatewayRoute(profile: VlessProfile, internalBasePor
   for (const client of activeClients) {
     const paths = clientWebSocketPaths(profile, client);
     for (const mapping of mappings) {
-      if (normalizedPath === paths[mapping.protocol]) return { ...mapping, client };
+      if (normalizedPath === paths[mapping.protocol]) {
+        if (mapping.protocol === "socks") {
+          return { ...mapping, internalPath: paths.socks, port: clientSocksInboundPort(internalBasePort, client.id), client };
+        }
+        return { ...mapping, client };
+      }
     }
   }
   return undefined;
@@ -243,7 +256,10 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
   return {
     log: { loglevel: "warning" },
     stats: {},
-    policy: { levels: { "0": { statsUserUplink: true, statsUserDownlink: true } } },
+    policy: {
+      levels: { "0": { statsUserUplink: true, statsUserDownlink: true } },
+      system: { statsInboundUplink: true, statsInboundDownlink: true },
+    },
     api: { tag: "api", listen: `127.0.0.1:${internalPort + 10}`, services: ["StatsService"] },
     inbounds: [
       {
@@ -289,14 +305,24 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         protocol: "socks",
         settings: {
           auth: "password",
-          accounts: [
-            ...(globalClientEnabled ? [{ user: profile.socksUsername, pass: profile.socksPassword }] : []),
-            ...activeClients.map(client => ({ user: client.socksUsername, pass: client.socksPassword })),
-          ],
+          accounts: globalClientEnabled ? [{ user: profile.socksUsername, pass: profile.socksPassword }] : [],
           udp: true,
         },
         streamSettings: streamSettings(profile.socksWsPath),
       },
+      ...activeClients.map(client => ({
+        tag: clientSocksInboundTag(client.id),
+        listen: "127.0.0.1",
+        port: clientSocksInboundPort(internalPort, client.id),
+        protocol: "socks",
+        settings: {
+          auth: "password",
+          accounts: [{ user: client.socksUsername, pass: client.socksPassword }],
+          udp: true,
+          userLevel: 0,
+        },
+        streamSettings: streamSettings(clientWebSocketPaths(profile, client).socks),
+      })),
     ],
     outbounds: [{ protocol: "freedom", tag: "direct" }],
   };

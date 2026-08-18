@@ -128,3 +128,5 @@
 - [x] Add unified connection-limit controls, summaries, subscription status, lifecycle behavior, and deterministic regression coverage matching the existing speed-limit feature.
 - [x] Replace raw per-client WebSocket tunnel counting with Cloudflare-aware unique source-IP counting so multiplexed sockets from one device use one connection slot while distinct source IPs consume separate slots.
 - [x] Normalize IPv6 source identities to their /64 network for finite per-client connection limits while retaining exact IPv4 identities and Cloudflare header extraction.
+- [x] Migrate per-client quota usage persistence and enforcement from backend bridge-byte deltas back to Xray-core per-user counters across VLESS, VMess, Trojan, and SOCKS5.
+- [x] Preserve accurate quota reset, browser subscription status, client-management wording, scheduled enforcement, and forced tunnel closure under Xray-based accounting.

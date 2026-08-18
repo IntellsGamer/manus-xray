@@ -183,6 +183,8 @@ async function main() {
   remoteSocksConfig.inbounds[0].port = remoteSocksPort;
   remoteSocksConfig.outbounds[0].settings.servers[0].address = "127.0.0.1";
   remoteSocksConfig.outbounds[0].settings.servers[0].port = bridgePort;
+  remoteSocksConfig.outbounds[0].settings.servers[0].users[0].user = temporaryQuotaClient.socksUsername;
+  remoteSocksConfig.outbounds[0].settings.servers[0].users[0].pass = temporaryQuotaClient.socksPassword;
   remoteSocksConfig.outbounds[0].streamSettings.security = "none";
   remoteSocksConfig.outbounds[0].streamSettings.wsSettings.path = "/socks/temporary-quota-route-token";
   delete remoteSocksConfig.outbounds[0].streamSettings.tlsSettings;
@@ -193,7 +195,7 @@ async function main() {
     inbounds: [{ listen: "127.0.0.1", port: vmessSocksPort, protocol: "socks", settings: { auth: "noauth", udp: true } }],
     outbounds: [{
       protocol: "vmess",
-      settings: { address: "127.0.0.1", port: bridgePort, id: profile.vmessUuid, security: "none", level: 0 },
+      settings: { address: "127.0.0.1", port: bridgePort, id: temporaryQuotaClient.vmessUuid, security: "none", level: 0 },
       streamSettings: { network: "ws", security: "none", wsSettings: { path: "/vmess/temporary-quota-route-token" } },
     }],
   };
@@ -231,6 +233,7 @@ async function main() {
   let remoteSocksClient;
   let trojanClient;
   let bridge;
+  let probeServer;
   try {
     server = startXray(serverConfigPath, resolve(workDir, "server.log"));
     await waitForPort(serverPort);
@@ -247,6 +250,11 @@ async function main() {
     await new Promise((resolveListen, rejectListen) => {
       bridge.once("error", rejectListen);
       bridge.listen(bridgePort, "127.0.0.1", resolveListen);
+    });
+    probeServer = createServer((_request, response) => response.end("Xray SOCKS counter probe"));
+    const probePort = await new Promise((resolveListen, rejectListen) => {
+      probeServer.once("error", rejectListen);
+      probeServer.listen(0, "127.0.0.1", () => resolveListen(probeServer.address().port));
     });
     await assertWebSocketHandshake(bridgePort, "/vless/temporary-quota-route-token");
     await assertWebSocketHandshake(bridgePort, "/vmess/temporary-quota-route-token");
@@ -265,9 +273,6 @@ async function main() {
     const request = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${socksPort}`, "https://example.com/"]);
     if (request.code !== 0) throw new Error(`VLESS transport request failed: ${request.stderr}`);
     if (!request.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VLESS transport");
-    const stats = await runCommand(xrayBinary, ["api", "statsquery", `--server=127.0.0.1:${serverPort + 10}`, "-pattern", "gateway-client-99"]);
-    if (stats.code !== 0 || !stats.stdout.includes("gateway-client-99-vless@local.invalid")) throw new Error(`Temporary 1 MB client statistics query failed: ${stats.stderr || stats.stdout}`);
-
     const directVmessRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${directVmessSocksPort}`, "https://example.com/"]);
     if (directVmessRequest.code !== 0) throw new Error(`Direct VMess transport request failed: ${directVmessRequest.stderr}`);
     if (!directVmessRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through direct VMess transport");
@@ -276,15 +281,26 @@ async function main() {
     if (vmessRequest.code !== 0) throw new Error(`VMess SOCKS5 transport request failed: ${vmessRequest.stderr}`);
     if (!vmessRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through VMess SOCKS5 transport");
 
-    const remoteSocksRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${remoteSocksPort}`, "https://example.com/"]);
+    const remoteSocksRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--noproxy", "", "--proxy", `socks5h://127.0.0.1:${remoteSocksPort}`, `http://127.0.0.1:${probePort}/`]);
     if (remoteSocksRequest.code !== 0) throw new Error(`Remote SOCKS5 transport request failed: ${remoteSocksRequest.stderr}`);
-    if (!remoteSocksRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through remote SOCKS5 WebSocket transport");
+    if (!remoteSocksRequest.stdout.includes("Xray SOCKS counter probe")) throw new Error("Unexpected upstream response through remote SOCKS5 WebSocket transport");
 
     const trojanRequest = await runCommand("curl", ["--fail", "--silent", "--show-error", "--max-time", "20", "--proxy", `socks5h://127.0.0.1:${trojanSocksPort}`, "https://example.com/"]);
     if (trojanRequest.code !== 0) throw new Error(`Trojan transport request failed: ${trojanRequest.stderr}`);
     if (!trojanRequest.stdout.includes("Example Domain")) throw new Error("Unexpected upstream response through Trojan WebSocket transport");
 
-    console.log("Xray config validation plus the temporary 1 MB named client, VLESS, VMess, Trojan, and remote SOCKS5 opaque-route bridge requests passed.");
+    const stats = await runCommand(xrayBinary, ["api", "statsquery", `--server=127.0.0.1:${serverPort + 10}`, "-pattern", "gateway-client-99"]);
+    const counterIdentities = [
+      "gateway-client-99-vless@local.invalid",
+      "gateway-client-99-vmess@local.invalid",
+      "gateway-client-99-trojan@local.invalid",
+      "gateway-client-99-socks-in",
+    ];
+    if (stats.code !== 0 || counterIdentities.some(identity => !stats.stdout.includes(identity))) {
+      throw new Error(`Named client Xray counter query did not include all protocol identities: ${stats.stderr || stats.stdout}`);
+    }
+
+    console.log("Xray config validation plus named VLESS, VMess, Trojan, and SOCKS5 transport requests with per-protocol Xray counter identities passed.");
   } finally {
     await stop(trojanClient);
     await stop(remoteSocksClient);
@@ -293,6 +309,7 @@ async function main() {
     await stop(client);
     await stop(server);
     await new Promise(resolveClose => bridge?.close(() => resolveClose()));
+    await new Promise(resolveClose => probeServer?.close(() => resolveClose()));
     const generated = JSON.parse(await readFile(serverConfigPath, "utf8"));
     if (generated.inbounds?.[0]?.settings?.clients?.[0]?.id !== uuid) {
       throw new Error("Generated config did not preserve the client UUID");

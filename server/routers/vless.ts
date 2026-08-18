@@ -21,7 +21,7 @@ import {
 } from "../db";
 import { adminProcedure, router } from "../_core/trpc";
 import { buildClientConnectionDetails, buildGatewayConnectionDetails, normaliseWsPath } from "../vless";
-import { applyXrayProfile, enforceGatewayTrafficQuotas, getXrayRuntimeStatus } from "../xrayRuntime";
+import { applyXrayProfile, enforceGatewayTrafficQuotas, getClientTrafficStats, getXrayRuntimeStatus } from "../xrayRuntime";
 
 const profileInput = z.object({
   serverAddress: z.string().trim().min(1).max(255),
@@ -195,7 +195,8 @@ export const vlessRouter = router({
     const profile = await profileForRequest(ctx.req.headers);
     const client = await getGatewayClientById(input.id);
     if (!client) throw new Error("Gateway client was not found");
-    const reset = await resetGatewayClientTrafficUsage(input.id);
-    return presentClient(profile, reset, true);
+    const counters = await getClientTrafficStats([client]);
+    const reset = await resetGatewayClientTrafficUsage(input.id, counters?.get(input.id));
+    return presentClient(profile, reset, Boolean(counters));
   }),
 });
