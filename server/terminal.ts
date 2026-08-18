@@ -196,6 +196,15 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
   let closed = false;
   let lastActivityAt = Date.now();
   let ptyProcess: pty.IPty;
+  let queuedOutput = "";
+  let outputFlushTimer: NodeJS.Timeout | undefined;
+  const flushOutput = () => {
+    outputFlushTimer = undefined;
+    if (closed || !queuedOutput) return;
+    const data = queuedOutput;
+    queuedOutput = "";
+    send(socket, { type: "output", data });
+  };
   const finalizeSession = createTerminalSessionFinalizer({
     releaseLease,
     endProcess: () => {
@@ -214,6 +223,7 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
     void finalizeSession().catch(() => undefined);
     clearInterval(idleTimer);
     clearTimeout(maxAgeTimer);
+    if (outputFlushTimer) clearTimeout(outputFlushTimer);
     if (socket.readyState === socket.OPEN || socket.readyState === socket.CLOSING) socket.close(code, reason);
   };
 
@@ -240,13 +250,15 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
 
   ptyProcess.onData(data => {
     const bytes = Buffer.byteLength(data, "utf8");
-    if (!outputLimiter.accept(bytes) || socket.bufferedAmount + bytes > MAX_SOCKET_BUFFERED_OUTPUT_BYTES) {
+    if (!outputLimiter.accept(bytes) || socket.bufferedAmount + Buffer.byteLength(queuedOutput, "utf8") + bytes > MAX_SOCKET_BUFFERED_OUTPUT_BYTES) {
       shutdown(1008, "Terminal output limit exceeded");
       return;
     }
-    send(socket, { type: "output", data });
+    queuedOutput += data;
+    if (!outputFlushTimer) outputFlushTimer = setTimeout(flushOutput, 16);
   });
   ptyProcess.onExit(({ exitCode, signal }) => {
+    flushOutput();
     send(socket, { type: "exit", exitCode, signal });
     shutdown(1000, "Terminal process exited");
   });

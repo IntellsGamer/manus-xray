@@ -25,3 +25,5 @@
 - [ ] Wait five minutes for the current published terminal revision to settle before live verification.
 - [ ] Perform the requested post-rollout authenticated Terminal connection check.
 - [ ] Check the published authenticated Terminal connection immediately without further waiting.
+- [ ] Trace and fix the infinite terminal line-spam behavior without interrupting the pending deployment.
+- [ ] Publish the validated terminal output batching mitigation at the user’s request.
