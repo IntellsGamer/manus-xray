@@ -4,7 +4,7 @@ import { AddressInfo } from "net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VlessProfile } from "../drizzle/schema";
 import { ClientSpeedLimiter, createTunnelUsageFlusher, registerVlessUpgradeProxy, speedLimitBytesPerSecond } from "./vlessUpgradeProxy";
-import { activeGatewayTunnelCount, activeGatewayTunnelCountForClient, closeActiveGatewayTunnels } from "./gatewayTunnels";
+import { activeGatewaySourceCountForClient, activeGatewayTunnelCount, activeGatewayTunnelCountForClient, closeActiveGatewayTunnels } from "./gatewayTunnels";
 
 const profile: VlessProfile = {
   id: 1,
@@ -73,7 +73,7 @@ async function listenAdjacent(first: ReturnType<typeof createTcpServer>, second:
   throw new Error("Could not allocate adjacent loopback ports for protocol bridge testing");
 }
 
-function upgrade(port: number, path: string) {
+function upgrade(port: number, path: string, extraHeaders: Record<string, string> = {}) {
   return new Promise<{ statusCode?: number; error?: Error }>(resolveUpgrade => {
     const client = request({
       host: "127.0.0.1",
@@ -84,6 +84,7 @@ function upgrade(port: number, path: string) {
         Upgrade: "websocket",
         "Sec-WebSocket-Version": "13",
         "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+        ...extraHeaders,
       },
     });
     client.once("upgrade", response => {
@@ -95,12 +96,13 @@ function upgrade(port: number, path: string) {
   });
 }
 
-function upgradeWithBufferedPayload(port: number, path: string, payload: string, keepOpen = false) {
+function upgradeWithBufferedPayload(port: number, path: string, payload: string, keepOpen = false, extraHeaders: Record<string, string> = {}) {
   return new Promise<ReturnType<typeof createConnection>>((resolveUpgrade, rejectUpgrade) => {
     const socket = createConnection({ host: "127.0.0.1", port });
     let response = "";
     socket.once("connect", () => {
-      socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n${payload}`);
+      const forwardedHeaders = Object.entries(extraHeaders).map(([name, value]) => `${name}: ${value}\r\n`).join("");
+      socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n${forwardedHeaders}\r\n${payload}`);
     });
     socket.on("data", chunk => {
       response += chunk.toString();
@@ -238,7 +240,7 @@ describe("VLESS WebSocket upgrade bridge", () => {
     expect(Math.max(...durations)).toBeGreaterThanOrEqual(900);
   });
 
-  it("rejects a second concurrent VLESS or VMess tunnel for one finite-cap client and admits it after capacity is released", async () => {
+  it("allows multiplexed VLESS and VMess tunnels from one Cloudflare source while rejecting a distinct source at the finite client cap", async () => {
     const namedClient = { id: 55, enabled: true, connectionToken: "shared-connection-cap-route", expiresAt: null, connectionLimit: 1 } as unknown as import("../drizzle/schema").GatewayClient;
     const respond = (socket: Socket) => {
       socket.once("data", () => socket.write("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
@@ -258,16 +260,23 @@ describe("VLESS WebSocket upgrade bridge", () => {
     });
     const bridgePort = await listen(bridge);
 
-    const first = await upgradeWithBufferedPayload(bridgePort, "/vless/shared-connection-cap-route", "", true);
+    const sharedSource = { "cf-connecting-ip": "198.51.100.10" };
+    const secondSource = { "cf-connecting-ip": "198.51.100.11" };
+    const first = await upgradeWithBufferedPayload(bridgePort, "/vless/shared-connection-cap-route", "", true, sharedSource);
     expect(activeGatewayTunnelCountForClient(namedClient.id)).toBe(1);
-    const rejected = await upgrade(bridgePort, "/vmess/shared-connection-cap-route");
+    const sameSource = await upgradeWithBufferedPayload(bridgePort, "/vmess/shared-connection-cap-route", "", true, sharedSource);
+    expect(activeGatewayTunnelCountForClient(namedClient.id)).toBe(2);
+    expect(activeGatewaySourceCountForClient(namedClient.id)).toBe(1);
+    const rejected = await upgrade(bridgePort, "/vmess/shared-connection-cap-route", secondSource);
     expect(rejected.error).toBeInstanceOf(Error);
-    expect(applyProfile).toHaveBeenCalledTimes(1);
+    expect(applyProfile).toHaveBeenCalledTimes(2);
 
     first.destroy();
+    sameSource.destroy();
     await new Promise(resolve => setTimeout(resolve, 25));
     expect(activeGatewayTunnelCountForClient(namedClient.id)).toBe(0);
-    await expect(upgrade(bridgePort, "/vmess/shared-connection-cap-route")).resolves.toMatchObject({ statusCode: 101 });
+    expect(activeGatewaySourceCountForClient(namedClient.id)).toBe(0);
+    await expect(upgrade(bridgePort, "/vmess/shared-connection-cap-route", secondSource)).resolves.toMatchObject({ statusCode: 101 });
   });
 
   it("persists concurrent bridge deltas in order and enforces the quota when the accumulated total reaches its threshold", async () => {

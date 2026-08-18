@@ -126,3 +126,4 @@
 - [x] Add a persistent per-client concurrent connection limit with `-1` as the unlimited default and migrate existing clients to unlimited.
 - [x] Enforce each finite connection cap across concurrent VLESS, VMess, Trojan, and SOCKS5 gateway tunnels without disrupting other clients.
 - [x] Add unified connection-limit controls, summaries, subscription status, lifecycle behavior, and deterministic regression coverage matching the existing speed-limit feature.
+- [x] Replace raw per-client WebSocket tunnel counting with Cloudflare-aware unique source-IP counting so multiplexed sockets from one device use one connection slot while distinct source IPs consume separate slots.

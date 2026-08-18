@@ -103,8 +103,8 @@ describe("subscription route", () => {
     expect(html).toContain("25 Mbps");
     expect(html).toContain("Shared across all connections");
     expect(html).toContain("Connections");
-    expect(html).toContain("3 concurrent");
-    expect(html).toContain("Shared across all protocols");
+    expect(html).toContain("3 sources");
+    expect(html).toContain("Unique source IPs across all protocols");
     expect(html).not.toContain("Gateway endpoint");
     expect(html).not.toContain("Subscription deliveries");
     expect(html).not.toContain("Last observed subscription delivery");
@@ -123,6 +123,6 @@ describe("subscription route", () => {
     expect(html).toContain("Speed limit");
     expect(html).toContain("No Mbps cap");
     expect(html).toContain("Connections");
-    expect(html).toContain("No concurrent tunnel cap");
+    expect(html).toContain("No source-IP cap");
   });
 });

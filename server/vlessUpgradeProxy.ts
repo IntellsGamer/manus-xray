@@ -1,11 +1,11 @@
 import type { IncomingMessage, Server } from "http";
-import net, { type Socket } from "net";
+import net, { isIP, type Socket } from "net";
 import { Transform, type Duplex } from "stream";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
 import { resolvePublicGatewayRoute } from "./vless";
 import { applyXrayProfile, enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
-import { reserveGatewayClientTunnel, trackGatewayTunnel } from "./gatewayTunnels";
+import { reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
 
 type UpgradeDependencies = {
   getProfile?: () => Promise<VlessProfile | undefined>;
@@ -72,6 +72,19 @@ function buildUpgradeRequest(req: IncomingMessage, internalPort: number, interna
   headers.push(`host: 127.0.0.1:${internalPort}`);
   const requestUrl = new URL(req.url || "/", "http://local-gateway");
   return `GET ${internalPath}${requestUrl.search} HTTP/${req.httpVersion}\r\n${headers.join("\r\n")}\r\n\r\n`;
+}
+
+function headerValue(req: IncomingMessage, name: string) {
+  const value = req.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** Cloudflare supplies the direct client address here; local/direct traffic safely falls back to the peer address. */
+export function gatewaySourceIdentity(req: IncomingMessage) {
+  const cloudflareAddress = headerValue(req, "cf-connecting-ip")?.trim();
+  const candidate = cloudflareAddress && isIP(cloudflareAddress) ? cloudflareAddress : req.socket.remoteAddress || "unknown";
+  const ipv4Mapped = candidate.startsWith("::ffff:") ? candidate.slice(7) : candidate;
+  return isIP(ipv4Mapped) ? ipv4Mapped.toLowerCase() : "unknown";
 }
 
 export function createTunnelUsageFlusher(input: {
@@ -163,7 +176,8 @@ async function bridgeUpgrade(
     socket.destroy();
     return;
   }
-  const releaseConnectionReservation = route.client ? reserveGatewayClientTunnel(route.client.id, route.client.connectionLimit ?? -1) : undefined;
+  const sourceIdentity = gatewaySourceIdentity(req);
+  const releaseConnectionReservation = route.client ? reserveGatewayClientSource(route.client.id, sourceIdentity, route.client.connectionLimit ?? -1) : undefined;
   if (route.client && !releaseConnectionReservation) {
     socket.destroy();
     return;
@@ -184,7 +198,7 @@ async function bridgeUpgrade(
   upstream.once("connect", () => {
     clearTimeout(connectTimeout);
     upstream.write(buildUpgradeRequest(req, route.port, route.internalPath));
-    trackGatewayTunnel(socket, upstream, route.client?.id, releaseConnectionReservation);
+    trackGatewayTunnel(socket, upstream, route.client?.id, sourceIdentity, releaseConnectionReservation);
     if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
     const speedLimiter = route.client ? limiterForClient(route.client) : undefined;
     if (speedLimiter) {

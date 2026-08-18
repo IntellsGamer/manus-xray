@@ -38,8 +38,8 @@ function quotaCards(quota: { trafficLimitBytes: number; trafficUsedBytes: number
     ? { title: "Unlimited", detail: "No Mbps cap" }
     : { title: `${quota.speedLimitMbps} Mbps`, detail: "Shared across all connections" };
   const connections = quota.connectionLimit < 0
-    ? { title: "Unlimited", detail: "No concurrent tunnel cap" }
-    : { title: `${quota.connectionLimit} concurrent`, detail: "Shared across all protocols" };
+    ? { title: "Unlimited", detail: "No source-IP cap" }
+    : { title: `${quota.connectionLimit} sources`, detail: "Unique source IPs across all protocols" };
   return `<article class="card"><span>Data quota</span><strong>${escapeHtml(data.title)}</strong><small>${escapeHtml(data.detail)}</small></article><article class="card"><span>Validity</span><strong>${escapeHtml(days.title)}</strong><small>${escapeHtml(days.detail)}</small></article><article class="card"><span>Speed limit</span><strong>${escapeHtml(speed.title)}</strong><small>${escapeHtml(speed.detail)}</small></article><article class="card"><span>Connections</span><strong>${escapeHtml(connections.title)}</strong><small>${escapeHtml(connections.detail)}</small></article>`;
 }
 
