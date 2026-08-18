@@ -19,3 +19,6 @@
 - [ ] Diagnose and fix the production Terminal WebSocket upgrade rejection.
 - [ ] Eliminate the remaining repeated terminal output/render loop and browser lag.
 - [ ] Verify the repaired production Terminal connection and publish the fix.
+- [ ] Inspect and repair the currently published Terminal route after the reported live failure.
+- [ ] Verify the published Terminal WebSocket from an authenticated browser session.
+- [ ] Trace and fix the immediate post-login Terminal WebSocket disconnect.

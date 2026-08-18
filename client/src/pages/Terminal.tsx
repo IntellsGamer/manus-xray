@@ -208,6 +208,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
 
     socket.onopen = () => {
       setConnectionState("connected");
+      terminal.clear();
       fitTerminal();
     };
     socket.onmessage = event => {
@@ -242,7 +243,6 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
       setConnectionState("disconnected");
       const reason = event.reason || "The request-scoped terminal session was closed.";
       setLastCloseReason(reason);
-      terminal.writeln(`\r\n\x1b[33m[${reason} Reconnect to open a new shell.]\x1b[0m`);
     };
 
     return () => {

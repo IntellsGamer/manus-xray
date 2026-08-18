@@ -290,6 +290,7 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
 
 async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   if (!isTerminalOriginAllowed(req)) {
+    console.warn(`[Terminal] Rejected upgrade due to origin mismatch (origin=${headerValue(req, "origin") ?? "missing"}, host=${headerValue(req, "host") ?? "missing"}).`);
     rejectUpgrade(socket, 403, "Forbidden");
     return;
   }
@@ -303,16 +304,19 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
       : req;
     user = await sdk.authenticateRequest(ticketRequest as Parameters<typeof sdk.authenticateRequest>[0]);
   } catch {
+    console.warn("[Terminal] Rejected upgrade because terminal authentication failed.");
     rejectUpgrade(socket, 401, "Unauthorized");
     return;
   }
 
   if (!isTerminalAdministrator(user)) {
+    console.warn("[Terminal] Rejected upgrade because the authenticated user is not an administrator.");
     rejectUpgrade(socket, 403, "Forbidden");
     return;
   }
 
   if (terminalSockets.size >= MAX_SESSIONS_PER_PROCESS) {
+    console.warn("[Terminal] Rejected upgrade because this instance already has an active terminal session.");
     rejectUpgrade(socket, 429, "Too Many Requests");
     return;
   }
@@ -328,6 +332,7 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
   });
   const acquired = await lease.acquire().catch(() => false);
   if (!acquired) {
+    console.warn("[Terminal] Rejected upgrade because another instance holds the terminal lease.");
     rejectUpgrade(socket, 429, "Too Many Requests");
     return;
   }
