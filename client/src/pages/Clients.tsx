@@ -99,8 +99,5 @@ export function ClientManagerContent() {
 }
 
 export default function Clients() {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="protocol-shell min-h-screen" />;
-  if (!user || user.role !== "admin") return <div className="protocol-shell grid min-h-screen place-items-center p-6"><div className="protocol-panel p-8 text-center"><h1 className="text-xl font-semibold">Owner access required</h1><p className="mt-2 text-sm text-muted-foreground">This page is available only to the gateway owner.</p></div></div>;
   return <DashboardLayout><ClientManagerContent /></DashboardLayout>;
 }

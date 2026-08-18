@@ -204,9 +204,5 @@ function AdminContent() {
 }
 
 export default function Admin() {
-  const { user, loading } = useAuth();
-  if (loading) return <AdminLoading />;
-  if (!user) return <SignInRequired />;
-  if (user.role !== "admin") return <Forbidden />;
   return <DashboardLayout><AdminContent /></DashboardLayout>;
 }

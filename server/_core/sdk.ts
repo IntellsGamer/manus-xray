@@ -1,11 +1,12 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS, decodeOAuthState } from "@shared/const";
+import { AXIOS_TIMEOUT_MS, COOKIE_NAME, THREE_DAYS_MS, decodeOAuthState } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
+import { getSessionCookieOptions } from "./cookies";
 import { ENV } from "./env";
 import type {
   ExchangeTokenRequest,
@@ -182,7 +183,7 @@ class SDKServer {
     options: { expiresInMs?: number } = {}
   ): Promise<string> {
     const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
+    const expiresInMs = options.expiresInMs ?? THREE_DAYS_MS;
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
@@ -192,6 +193,7 @@ class SDKServer {
       name: payload.name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt(Math.floor(issuedAt / 1000))
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
@@ -255,7 +257,7 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
-  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
+  async authenticateRequest(req: Request, res?: Response): Promise<AuthenticatedUser> {
     // 1. Prefer the session cookie (regular OAuth login).
     const cookies = this.parseCookies(req.headers.cookie);
     let sessionToken = cookies.get(COOKIE_NAME);
@@ -315,6 +317,20 @@ class SDKServer {
       openId: user.openId,
       lastSignedIn: signedInAt,
     });
+
+    // A successful local verification is sufficient for the configured idle
+    // window. Refreshing this signed cookie on active tRPC use creates a
+    // three-day sliding session without a fresh request to the OAuth provider.
+    if (res) {
+      const refreshedToken = await this.createSessionToken(user.openId, {
+        name: session.name,
+        expiresInMs: THREE_DAYS_MS,
+      });
+      res.cookie(COOKIE_NAME, refreshedToken, {
+        ...getSessionCookieOptions(req),
+        maxAge: THREE_DAYS_MS,
+      });
+    }
 
     return user;
   }
