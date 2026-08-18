@@ -64,6 +64,8 @@ function presentProfile(profile: Awaited<ReturnType<typeof ensureVlessProfile>>)
     tlsEnabled: profile.tlsEnabled,
     globalProfileEnabled: profile.globalProfileEnabled,
     vlessUri: connection.vlessUri,
+    xhttpUri: connection.xhttpUri,
+    xhttpPath: connection.xhttpPath,
     vmess: { uuid: profile.vmessUuid, wsPath: profile.vmessWsPath, uri: connection.vmessUri },
     trojan: { wsPath: profile.trojanWsPath, uri: connection.trojanUri },
     socks5: { username: profile.socksUsername, wsPath: profile.socksWsPath, clientConfig: connection.socksClientConfig },

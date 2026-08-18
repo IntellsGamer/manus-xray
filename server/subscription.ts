@@ -5,7 +5,7 @@ import {
   getVlessProfileBySubscriptionToken,
   recordSubscriptionDelivery,
 } from "./db";
-import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSubscriptionPayload, clientWebSocketPaths, gatewayWebSocketPaths } from "./vless";
+import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSubscriptionPayload, clientWebSocketPaths, gatewayWebSocketPaths, gatewayXhttpPath } from "./vless";
 import { enforceGatewayTrafficQuotas } from "./xrayRuntime";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
@@ -68,7 +68,7 @@ async function serveSubscription(req: Request, res: Response) {
     if (browser) {
       res.status(200).set("Cache-Control", "no-store, max-age=0").type("text/html; charset=utf-8").send(statusPage({
         name: "Global gateway profile", enabled: true,
-        paths: Object.values(gatewayWebSocketPaths(profile)),
+        paths: [...Object.values(gatewayWebSocketPaths(profile)), gatewayXhttpPath(profile)],
       }));
       return;
     }

@@ -120,13 +120,9 @@
   .protocol-dialog { border-color: var(--border); background: var(--popover); color: var(--popover-foreground); }
   .route-row { display: grid; width: 100%; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.6rem; border-radius: 0.7rem; padding: 0.65rem; text-align: left; transition: background 160ms cubic-bezier(0.23, 1, 0.32, 1); }
   .route-row:hover { background: var(--accent); } .route-row span:first-child { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.78rem; font-weight: 650; } .route-row code { color: var(--muted-foreground); font-size: 0.7rem; }
-  @media (min-width: 1024px) and (max-width: 1535px) {
-    form:has(#storage-limit) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-    form:has(#storage-limit) > :first-child, form:has(#storage-limit) > :last-child { grid-column: span 2 / span 2 !important; }
-    form:has(#storage-limit) > :nth-child(2), form:has(#storage-limit) > :nth-child(3), form:has(#storage-limit) > :nth-child(4), form:has(#storage-limit) > :nth-child(5) { grid-column: auto / span 1 !important; }
-  }
-  @media (min-width: 1536px) {
-    form:has(#storage-limit) { grid-template-columns: minmax(15.5rem, 1.6fr) minmax(8rem, 0.85fr) minmax(9.5rem, 1fr) minmax(9.5rem, 1fr) !important; }
+  @media (min-width: 1024px) {
+    section:has(#storage-limit) { grid-template-columns: minmax(0, 1fr) !important; }
+    form:has(#storage-limit) { grid-template-columns: minmax(17rem, 1.6fr) repeat(3, minmax(11rem, 1fr)) !important; }
     form:has(#storage-limit) > :first-child, form:has(#storage-limit) > :last-child { grid-column: span 4 / span 4 !important; }
     form:has(#storage-limit) > :nth-child(2), form:has(#storage-limit) > :nth-child(3), form:has(#storage-limit) > :nth-child(4), form:has(#storage-limit) > :nth-child(5) { grid-column: auto / span 1 !important; }
   }

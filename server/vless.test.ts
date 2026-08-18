@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { buildClientConnectionDetails, buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXrayConfig, clientWebSocketPaths, normaliseGatewayPaths, normaliseWsPath, resolvePublicGatewayRoute } from "./vless";
+import { buildClientConnectionDetails, buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXhttpUri, buildXrayConfig, clientWebSocketPaths, normaliseGatewayPaths, normaliseWsPath, resolvePublicGatewayRoute } from "./vless";
 
 const profile: VlessProfile = {
   id: 1,
@@ -57,11 +57,16 @@ describe("VLESS profile serialization", () => {
     expect(parsed.searchParams.get("security")).toBe("tls");
     expect(parsed.searchParams.get("type")).toBe("ws");
     expect(parsed.searchParams.get("path")).toBe("/vless");
+    const xhttp = new URL(buildXhttpUri(profile));
+    expect(xhttp.searchParams.get("type")).toBe("xhttp");
+    expect(xhttp.searchParams.get("mode")).toBe("packet-up");
+    expect(xhttp.searchParams.get("path")).toBe(`/xhttp/${profile.subscriptionToken}`);
     const subscriptionLines = Buffer.from(buildSubscriptionPayload(profile), "base64").toString("utf8").split("\n");
-    expect(subscriptionLines).toHaveLength(3);
+    expect(subscriptionLines).toHaveLength(4);
     expect(new URL(subscriptionLines[0] || "").searchParams.get("path")).toBe(`/vless/${profile.subscriptionToken}`);
-    expect(subscriptionLines[1]).toMatch(/^vmess:\/\//);
-    expect(subscriptionLines[2]).toMatch(/^trojan:\/\//);
+    expect(new URL(subscriptionLines[1] || "").searchParams.get("type")).toBe("xhttp");
+    expect(subscriptionLines[2]).toMatch(/^vmess:\/\//);
+    expect(subscriptionLines[3]).toMatch(/^trojan:\/\//);
   });
 
   it("normalizes the WebSocket path and produces a valid VLESS inbound shape", () => {
@@ -75,8 +80,9 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[0]?.listen).toBe("127.0.0.1");
     expect(config.inbounds[0]?.settings.clients[0]).toEqual({ id: profile.uuid });
     expect(config.inbounds[0]?.streamSettings.wsSettings.path).toBe("/vless");
-    expect(config.inbounds).toHaveLength(4);
-    expect(config.inbounds.map(inbound => inbound.port)).toEqual([10000, 10001, 10002, 10003]);
+    expect(config.inbounds).toHaveLength(5);
+    expect(config.inbounds.map(inbound => inbound.port)).toEqual([10000, 10001, 10002, 10003, 10004]);
+    expect(config.inbounds[4]).toMatchObject({ port: 10004, streamSettings: { network: "xhttp", xhttpSettings: { path: "/xhttp", mode: "packet-up" } } });
   });
 
   it("serializes VMess, Trojan, and SOCKS5 imports with their isolated transport paths", () => {
@@ -102,7 +108,8 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[1]?.settings.clients).toEqual([{ id: namedClient.vmessUuid, email: `gateway-client-${namedClient.id}-vmess@local.invalid`, level: 0 }]);
     expect(config.inbounds[2]?.settings.clients).toEqual([{ password: namedClient.trojanPassword, email: `gateway-client-${namedClient.id}-trojan@local.invalid`, level: 0 }]);
     expect(config.inbounds[3]?.settings.accounts).toEqual([]);
-    expect(config.inbounds[4]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 10109, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
+    expect(config.inbounds[4]?.settings.clients).toEqual([]);
+    expect(config.inbounds[5]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 10109, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
     expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
     expect(new URL(clientDetails.vlessUri).searchParams.get("path")).toBe("/vless/named-client-route-token");
     expect(JSON.parse(Buffer.from(clientDetails.vmessUri.replace("vmess://", ""), "base64").toString("utf8")).path).toBe("/vmess/named-client-route-token");
