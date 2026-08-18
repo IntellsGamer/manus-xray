@@ -152,3 +152,4 @@
 - [x] Add an owner-only Recovery page that exports and validates/imports supported gateway configuration data safely.
 - [x] Assess a constrained, owner-only diagnostics-console alternative; do not expose unrestricted backend shell access through the web panel.
 - [x] Visually verify the Templates page, Recovery export/file-import UI, Devices autofill action, and Clients template selector in the shared admin shell.
+- [x] Replace the native named-client permanent-delete confirmation with the shared styled alert dialog used by policy-template deletion.
