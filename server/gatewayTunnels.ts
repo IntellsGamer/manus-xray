@@ -1,7 +1,8 @@
-import type { Socket } from "net";
-import type { Duplex } from "stream";
-
-type Tunnel = { client: Duplex; upstream: Socket; clientId?: number; sourceId?: string };
+type TunnelSide = {
+  destroy: () => unknown;
+  once(event: "close", listener: () => void): unknown;
+};
+type Tunnel = { client: TunnelSide; upstream: TunnelSide; clientId?: number; sourceId?: string };
 const activeTunnels = new Set<Tunnel>();
 const tunnelsByClient = new Map<number, Set<Tunnel>>();
 const tunnelsByClientSource = new Map<number, Map<string, Set<Tunnel>>>();
@@ -48,7 +49,7 @@ export function reserveGatewayClientSource(clientId: number, sourceId: string, c
 }
 
 /** Track an accepted public bridge tunnel until either side closes. */
-export function trackGatewayTunnel(client: Duplex, upstream: Socket, clientId?: number, sourceId?: string, releaseReservation?: () => void) {
+export function trackGatewayTunnel(client: TunnelSide, upstream: TunnelSide, clientId?: number, sourceId?: string, releaseReservation?: () => void) {
   releaseReservation?.();
   const tunnel = { client, upstream, clientId, sourceId };
   activeTunnels.add(tunnel);

@@ -98,6 +98,8 @@ describe("subscription route", () => {
     const html = await response.text();
     expect(html).toContain(namedClient.vlessUuid);
     expect(html).toContain("/vless/browser-client-route-token");
+    expect(html).toContain("/xhttp/browser-client-route-token");
+    expect(html).toContain("type=xhttp");
     expect(html).toContain("8 MB left");
     expect(html).toContain("Speed limit");
     expect(html).toContain("25 Mbps");
@@ -108,6 +110,21 @@ describe("subscription route", () => {
     expect(html).not.toContain("Gateway endpoint");
     expect(html).not.toContain("Subscription deliveries");
     expect(html).not.toContain("Last observed subscription delivery");
+  });
+
+  it("returns four named-client imports including VLESS/XHTTP in the encoded subscription feed", async () => {
+    databaseMock.getVlessProfileBySubscriptionToken.mockResolvedValue(undefined);
+    databaseMock.getGatewayClientBySubscriptionToken.mockResolvedValue(namedClient);
+    databaseMock.getVlessProfile.mockResolvedValue(profile);
+    databaseMock.recordSubscriptionDelivery.mockResolvedValue(undefined);
+
+    const response = await request(`/sub/${namedClient.subscriptionToken}`);
+
+    expect(response.status).toBe(200);
+    const imports = Buffer.from(await response.text(), "base64").toString("utf8").split("\n");
+    expect(imports).toHaveLength(4);
+    expect(new URL(imports[1] || "").searchParams.get("type")).toBe("xhttp");
+    expect(new URL(imports[1] || "").searchParams.get("path")).toBe("/xhttp/browser-client-route-token");
   });
 
   it("renders unlimited speed and connection sentinels as clear subscription status", async () => {

@@ -58,6 +58,10 @@ export function gatewayXhttpPath(profile: VlessProfile) {
   return `/xhttp/${profile.subscriptionToken}`;
 }
 
+export function clientXhttpPath(client: Pick<GatewayClient, "connectionToken">) {
+  return `/xhttp/${client.connectionToken}`;
+}
+
 function publicGatewayProfile(profile: VlessProfile): VlessProfile {
   const paths = gatewayWebSocketPaths(profile);
   return { ...profile, wsPath: paths.vless, vmessWsPath: paths.vmess, trojanWsPath: paths.trojan, socksWsPath: paths.socks };
@@ -73,16 +77,25 @@ export function buildVlessUri(profile: VlessProfile) {
   return `${endpoint.toString()}#${encodeURIComponent("Nginx Gateway")}`;
 }
 
-export function buildXhttpUri(profile: VlessProfile) {
+function buildXhttpUriForPath(profile: VlessProfile, path: string, label: string) {
   const endpoint = new URL(`vless://${profile.uuid}@${profile.serverAddress}:${profile.port}`);
   endpoint.searchParams.set("encryption", "none");
   endpoint.searchParams.set("security", profile.tlsEnabled ? "tls" : "none");
   endpoint.searchParams.set("type", "xhttp");
   endpoint.searchParams.set("host", profile.serverAddress);
-  endpoint.searchParams.set("path", gatewayXhttpPath(profile));
+  endpoint.searchParams.set("path", path);
   endpoint.searchParams.set("mode", "packet-up");
   endpoint.searchParams.set("sni", profile.serverAddress);
-  return `${endpoint.toString()}#${encodeURIComponent("Nginx Gateway · VLESS XHTTP")}`;
+  return `${endpoint.toString()}#${encodeURIComponent(label)}`;
+}
+
+export function buildXhttpUri(profile: VlessProfile) {
+  return buildXhttpUriForPath(profile, gatewayXhttpPath(profile), "Nginx Gateway · VLESS XHTTP");
+}
+
+export function buildClientXhttpUri(profile: VlessProfile, client: GatewayClient) {
+  const clientProfile = profileForClient(profile, client);
+  return buildXhttpUriForPath(clientProfile, clientXhttpPath(client), `Nginx Gateway · ${client.name} VLESS XHTTP`);
 }
 
 function publicWebSocketParams(profile: VlessProfile, path: string) {
@@ -177,6 +190,7 @@ export function buildClientConnectionDetails(profile: VlessProfile, client: Gate
   const clientProfile = profileForClient(profile, client);
   return {
     vlessUri: buildVlessUri(clientProfile),
+    xhttpUri: buildClientXhttpUri(profile, client),
     vmessUri: buildVmessUri(clientProfile),
     trojanUri: buildTrojanUri(clientProfile),
     socksClientConfig: buildSocksClientConfig(clientProfile),
@@ -197,7 +211,7 @@ export function buildGatewayConnectionDetails(profile: VlessProfile) {
 
 export function buildClientSubscriptionPayload(profile: VlessProfile, client: GatewayClient) {
   const details = buildClientConnectionDetails(profile, client);
-  return Buffer.from([details.vlessUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
+  return Buffer.from([details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
 }
 
 export type TrafficProtocol = "vless" | "vmess" | "trojan";
@@ -339,7 +353,10 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         port: internalPort + 4,
         protocol: "vless",
         settings: {
-          clients: globalClientEnabled ? [{ id: profile.uuid }] : [],
+          clients: [
+            ...(globalClientEnabled ? [{ id: profile.uuid }] : []),
+            ...activeClients.map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id, "vless"), level: 0 })),
+          ],
           decryption: "none",
         },
         streamSettings: xhttpStreamSettings,

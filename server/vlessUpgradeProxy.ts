@@ -49,7 +49,7 @@ export function createSpeedLimitTransform(limiter?: ClientSpeedLimiter) {
 
 const clientSpeedLimiters = new Map<string, ClientSpeedLimiter>();
 
-function limiterForClient(client: GatewayClient) {
+export function limiterForGatewayClient(client: GatewayClient) {
   if (client.speedLimitMbps <= 0) return undefined;
   const key = `${client.id}:${client.speedLimitMbps}`;
   let limiter = clientSpeedLimiters.get(key);
@@ -223,7 +223,7 @@ async function bridgeUpgrade(
     upstream.write(buildUpgradeRequest(req, route.port, route.internalPath));
     trackGatewayTunnel(socket, upstream, route.client?.id, sourceIdentity, releaseConnectionReservation);
     if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
-    const speedLimiter = route.client ? limiterForClient(route.client) : undefined;
+    const speedLimiter = route.client ? limiterForGatewayClient(route.client) : undefined;
     if (speedLimiter) {
       const clientToGateway = createSpeedLimitTransform(speedLimiter);
       const gatewayToClient = createSpeedLimitTransform(speedLimiter);
