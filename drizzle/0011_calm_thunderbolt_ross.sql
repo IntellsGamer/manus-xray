@@ -1,0 +1,1 @@
+ALTER TABLE `gateway_clients` ADD `activationFailedAt` timestamp;

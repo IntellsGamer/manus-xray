@@ -67,6 +67,7 @@ export const gatewayClients = mysqlTable("gateway_clients", {
   connectionToken: varchar("connectionToken", { length: 64 }).notNull().unique(),
   creationRequestId: varchar("creationRequestId", { length: 64 }).unique(),
   activationDueAt: timestamp("activationDueAt"),
+  activationFailedAt: timestamp("activationFailedAt"),
   trafficLimitBytes: bigint("trafficLimitBytes", { mode: "number" }).notNull().default(-1),
   trafficUsedBytes: bigint("trafficUsedBytes", { mode: "number" }).notNull().default(0),
   trafficStatsSnapshotBytes: bigint("trafficStatsSnapshotBytes", { mode: "number" }).notNull().default(0),

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   deleteGatewayClient: vi.fn(),
   listGatewayClients: vi.fn(),
   listSubscriptionEventsForClient: vi.fn(),
+  markGatewayClientActivationFailed: vi.fn(),
   regenerateGatewayProtocolCredential: vi.fn(),
   regenerateSubscriptionToken: vi.fn(),
   regenerateVlessUuid: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("./db", () => ({
   getGatewayClientById: mocks.getGatewayClientById,
   listGatewayClients: mocks.listGatewayClients,
   listSubscriptionEventsForClient: mocks.listSubscriptionEventsForClient,
+  markGatewayClientActivationFailed: mocks.markGatewayClientActivationFailed,
   regenerateGatewayProtocolCredential: mocks.regenerateGatewayProtocolCredential,
   regenerateSubscriptionToken: mocks.regenerateSubscriptionToken,
   regenerateVlessUuid: mocks.regenerateVlessUuid,
@@ -127,6 +129,7 @@ describe("client lifecycle mutations", () => {
     mocks.deleteGatewayClient.mockResolvedValue(undefined);
     mocks.createGatewayClient.mockResolvedValue({ ...storedClient, enabled: false, activationDueAt: new Date(Date.now() + 12_000) });
     mocks.activateGatewayClientIfDue.mockResolvedValue({ client: storedClient, activated: true, activationPending: false });
+    mocks.markGatewayClientActivationFailed.mockResolvedValue({ ...storedClient, enabled: false, activationDueAt: null, activationFailedAt: new Date() });
     mocks.applyXrayProfile.mockResolvedValue(undefined);
     mocks.getGatewayClientById.mockResolvedValue(storedClient);
     mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, quotaExhaustedAt: null });
@@ -162,7 +165,7 @@ describe("client lifecycle mutations", () => {
 
     await caller.activateClient({ id: storedClient.id });
 
-    expect(mocks.activateGatewayClientIfDue).toHaveBeenCalledWith(storedClient.id);
+    expect(mocks.activateGatewayClientIfDue).toHaveBeenCalledWith(storedClient.id, expect.any(Date), false);
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
   });
 
@@ -174,6 +177,19 @@ describe("client lifecycle mutations", () => {
 
     expect(result).toMatchObject({ enabled: false, activationPending: true, activated: false });
     expect(mocks.applyXrayProfile).not.toHaveBeenCalled();
+  });
+
+  it("marks an activation as failed and leaves it available for a manual forced retry when Xray reload fails", async () => {
+    mocks.applyXrayProfile.mockRejectedValue(new Error("Xray unavailable"));
+    const caller = vlessRouter.createCaller(adminContext());
+
+    const failed = await caller.activateClient({ id: storedClient.id });
+    const retried = await caller.activateClient({ id: storedClient.id, force: true });
+
+    expect(mocks.markGatewayClientActivationFailed).toHaveBeenCalledWith(storedClient.id);
+    expect(failed).toMatchObject({ enabled: false, activationFailed: true, activated: false });
+    expect(mocks.activateGatewayClientIfDue).toHaveBeenLastCalledWith(storedClient.id, expect.any(Date), true);
+    expect(retried).toMatchObject({ activationFailed: true, activated: false });
   });
 
   it("rejects invalid quota and day-limit requests before persistence", async () => {

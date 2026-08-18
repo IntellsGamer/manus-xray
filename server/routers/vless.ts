@@ -7,6 +7,7 @@ import {
   getGatewayClientById,
   listGatewayClients,
   listSubscriptionEventsForClient,
+  markGatewayClientActivationFailed,
   regenerateGatewayProtocolCredential,
   regenerateSubscriptionToken,
   regenerateVlessUuid,
@@ -88,7 +89,9 @@ function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, 
     lastSubscriptionAt: client.lastSubscriptionAt,
     quotaExhaustedAt: client.quotaExhaustedAt,
     activationDueAt: client.activationDueAt,
+    activationFailedAt: client.activationFailedAt,
     activationPending: Boolean(client.activationDueAt && !client.enabled),
+    activationFailed: Boolean(client.activationFailedAt && !client.enabled),
     createdAt: client.createdAt,
     connection: buildClientConnectionDetails(profile, client),
   };
@@ -144,11 +147,17 @@ export const vlessRouter = router({
     const client = await createGatewayClient(input);
     return presentClient(profile, client);
   }),
-  activateClient: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+  activateClient: adminProcedure.input(z.object({ id: z.number().int().positive(), force: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
-    const activation = await activateGatewayClientIfDue(input.id);
-    if (activation.activated) await applyXrayProfile(profile);
-    return { ...presentClient(profile, activation.client), activated: activation.activated, activationPending: activation.activationPending };
+    const activation = await activateGatewayClientIfDue(input.id, new Date(), input.force);
+    if (!activation.activated) return { ...presentClient(profile, activation.client), activated: false, activationPending: activation.activationPending };
+    try {
+      await applyXrayProfile(profile);
+      return { ...presentClient(profile, activation.client), activated: true, activationPending: false };
+    } catch (error) {
+      const failedClient = await markGatewayClientActivationFailed(input.id);
+      return { ...presentClient(profile, failedClient), activated: false, activationPending: false, activationFailed: true, activationError: error instanceof Error ? error.message : String(error) };
+    }
   }),
   setClientEnabled: adminProcedure.input(z.object({ id: z.number().int().positive(), enabled: z.boolean() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);

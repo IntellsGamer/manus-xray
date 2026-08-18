@@ -31,6 +31,10 @@ function speedLimitFromForm(rawValue: string) {
   return Math.max(0, Math.min(100_000, Math.floor(value)));
 }
 
+function ClientsLoading() {
+  return <div className="protocol-shell min-h-full"><div className="mx-auto max-w-6xl space-y-5 py-2 sm:py-5"><header className="protocol-header flex items-start justify-between"><div className="space-y-3"><Skeleton className="h-3 w-28" /><Skeleton className="h-9 w-52" /><Skeleton className="h-4 w-96 max-w-full" /></div><Skeleton className="h-7 w-28 rounded-full" /></header><section className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><div className="protocol-panel space-y-5 p-5 sm:p-6"><div className="flex justify-between"><div className="space-y-3"><Skeleton className="h-3 w-24" /><Skeleton className="h-6 w-44" /><Skeleton className="h-4 w-72 max-w-full" /></div><Skeleton className="h-5 w-5 rounded" /></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><Skeleton className="h-16 sm:col-span-2 lg:col-span-3" /><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-9 w-32 sm:col-span-2 lg:col-span-3" /></div></div><div className="protocol-panel p-5 sm:p-6"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-6 w-40" /><Skeleton className="mt-3 h-4 w-full" /><Skeleton className="mt-7 h-10 w-12 rounded-full" /></div></section><section className="protocol-panel p-5 sm:p-6"><Skeleton className="h-5 w-40" /><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" /></div><div className="mt-5 flex justify-end"><Skeleton className="h-9 w-28" /></div></section><section className="space-y-3"><div className="flex items-end justify-between"><div className="space-y-2"><Skeleton className="h-3 w-28" /><Skeleton className="h-6 w-64" /><Skeleton className="h-4 w-96 max-w-full" /></div><Skeleton className="h-7 w-28" /></div><Skeleton className="h-52" /><Skeleton className="h-52" /></section></div></div>;
+}
+
 export function ClientManagerContent() {
   const utils = trpc.useUtils();
   const { data: profile, isLoading: loadingProfile } = trpc.vless.get.useQuery(undefined, { retry: false });
@@ -50,6 +54,11 @@ export function ClientManagerContent() {
   const activate = trpc.vless.activateClient.useMutation({
     onSuccess: result => {
       if (result.activationPending) return;
+      if (result.activationFailed) {
+        toast.error("Client activation failed");
+        refresh();
+        return;
+      }
       toast.success(clientNotifications.activated);
       refresh();
     },
@@ -58,7 +67,7 @@ export function ClientManagerContent() {
   useEffect(() => {
     const timers = (clients || [])
       .filter(client => client.activationPending && client.activationDueAt)
-      .map(client => window.setTimeout(() => activate.mutate({ id: client.id }), Math.max(250, new Date(client.activationDueAt!).getTime() - Date.now() + 250)));
+      .map(client => window.setTimeout(() => activate.mutate({ id: client.id, force: false }), Math.max(250, new Date(client.activationDueAt!).getTime() - Date.now() + 250)));
     return () => timers.forEach(window.clearTimeout);
   }, [activate, clients]);
   const create = trpc.vless.createClient.useMutation({
@@ -76,7 +85,7 @@ export function ClientManagerContent() {
   const updatePolicy = trpc.vless.updateClientPolicy.useMutation({ onSuccess: () => { toast.success("Client policy saved"); refresh(); }, onError: error => toast.error(error.message) });
   const resetUsage = trpc.vless.resetClientUsage.useMutation({ onSuccess: () => { toast.success("Recorded usage reset to 0"); refresh(); }, onError: error => toast.error(error.message) });
 
-  if (loadingProfile || loadingClients || !profile) return <div className="protocol-shell min-h-screen p-6"><Skeleton className="mx-auto h-[32rem] max-w-6xl" /></div>;
+  if (loadingProfile || loadingClients || !profile) return <ClientsLoading />;
   return <div className="protocol-shell min-h-full"><div className="mx-auto max-w-6xl space-y-5 py-2 sm:py-5">
     <header className="protocol-header"><div><div className="protocol-overline text-primary">Gateway administration</div><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">Clients & routes</h1><p className="mt-2 text-sm text-muted-foreground">Named identities receive separate credentials and subscription feeds while sharing one HTTPS gateway.</p></div><Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary"><Users className="mr-1.5 h-3.5 w-3.5" />{clients?.length || 0} named clients</Badge></header>
 
@@ -84,7 +93,7 @@ export function ClientManagerContent() {
 
     <section className="protocol-panel p-5 sm:p-6"><div className="flex items-center gap-3"><Route className="h-5 w-5 text-primary" /><div><p className="protocol-overline">Transport paths</p><h2 className="mt-1 text-lg font-semibold">Independent protocol routes</h2></div></div><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{([['VLESS', 'wsPath'], ['VMess', 'vmessWsPath'], ['Trojan', 'trojanWsPath'], ['SOCKS5', 'socksWsPath']] as const).map(([label, key]) => <div key={key} className="space-y-2"><Label>{label} path</Label><Input value={paths[key]} onChange={event => setPaths(current => ({ ...current, [key]: event.target.value }))} className="protocol-input font-mono" /></div>)}</div><div className="mt-5 flex justify-end"><Button onClick={() => updatePaths.mutate(paths)} disabled={updatePaths.isPending}>Save routes</Button></div></section>
 
-    <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="protocol-overline">Named identities</p><h2 className="mt-1 text-lg font-semibold">Client lifecycle & policy registry</h2><p className="mt-1 text-sm text-muted-foreground">Quota values reflect bytes carried through each client’s route-identified gateway tunnel.</p></div><div className="rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">{clients?.filter(client => client.enabled).length || 0} enabled · {clients?.length || 0} total</div></div><ClientRegistry clients={clients || []} pending={toggle.isPending || rotate.isPending || resetUsage.isPending || deleteClient.isPending || updatePolicy.isPending} onToggle={(id, enabled) => toggle.mutate({ id, enabled })} onRotate={id => rotate.mutate({ id })} onResetUsage={id => resetUsage.mutate({ id })} onDelete={id => deleteClient.mutate({ id })} onCopy={value => copy(value, "Subscription URL")} onSavePolicy={(id, trafficLimitBytes, policyDayLimit, policySpeedLimitMbps) => updatePolicy.mutate({ id, trafficLimitBytes, dayLimit: policyDayLimit, speedLimitMbps: policySpeedLimitMbps })} /></section>
+    <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="protocol-overline">Named identities</p><h2 className="mt-1 text-lg font-semibold">Client lifecycle & policy registry</h2><p className="mt-1 text-sm text-muted-foreground">Quota values reflect bytes carried through each client’s route-identified gateway tunnel.</p></div><div className="rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">{clients?.filter(client => client.enabled).length || 0} enabled · {clients?.length || 0} total</div></div><ClientRegistry clients={clients || []} pending={activate.isPending || toggle.isPending || rotate.isPending || resetUsage.isPending || deleteClient.isPending || updatePolicy.isPending} onToggle={(id, enabled) => toggle.mutate({ id, enabled })} onActivate={id => activate.mutate({ id, force: true })} onRotate={id => rotate.mutate({ id })} onResetUsage={id => resetUsage.mutate({ id })} onDelete={id => deleteClient.mutate({ id })} onCopy={value => copy(value, "Subscription URL")} onSavePolicy={(id, trafficLimitBytes, policyDayLimit, policySpeedLimitMbps) => updatePolicy.mutate({ id, trafficLimitBytes, dayLimit: policyDayLimit, speedLimitMbps: policySpeedLimitMbps })} /></section>
   </div></div>;
 }
 

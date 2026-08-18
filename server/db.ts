@@ -278,6 +278,7 @@ export async function createGatewayClient(input: { name: string; trafficLimitByt
       connectionToken: createGatewayCredential(),
       creationRequestId: input.creationRequestId ?? null,
       activationDueAt,
+      activationFailedAt: null,
       trafficLimitBytes: input.trafficLimitBytes ?? -1,
       dayLimit,
       speedLimitMbps,
@@ -295,18 +296,27 @@ export async function createGatewayClient(input: { name: string; trafficLimitByt
   return created;
 }
 
-export async function activateGatewayClientIfDue(id: number, now = new Date()) {
+export async function activateGatewayClientIfDue(id: number, now = new Date(), force = false) {
   const client = await getGatewayClientById(id);
   if (!client) throw new Error("Gateway client was not found");
-  if (!client.activationDueAt) return { client, activated: false, activationPending: false };
-  if (client.activationDueAt.getTime() > now.getTime()) return { client, activated: false, activationPending: true };
+  if (!force && !client.activationDueAt) return { client, activated: false, activationPending: false };
+  if (!force && client.activationDueAt && client.activationDueAt.getTime() > now.getTime()) return { client, activated: false, activationPending: true };
 
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
-  await db.update(gatewayClients).set({ enabled: true, activationDueAt: null }).where(eq(gatewayClients.id, id));
+  await db.update(gatewayClients).set({ enabled: true, activationDueAt: null, activationFailedAt: null }).where(eq(gatewayClients.id, id));
   const activated = await getGatewayClientById(id);
   if (!activated) throw new Error("Gateway client was not found after activation");
   return { client: activated, activated: true, activationPending: false };
+}
+
+export async function markGatewayClientActivationFailed(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayClients).set({ enabled: false, activationDueAt: null, activationFailedAt: new Date() }).where(eq(gatewayClients.id, id));
+  const client = await getGatewayClientById(id);
+  if (!client) throw new Error("Gateway client was not found after activation failure");
+  return client;
 }
 
 export async function activateDueGatewayClients(now = new Date()) {

@@ -121,3 +121,5 @@
 - [x] Make icons in destructive and sign-out actions inherit the same red danger color as their labels across the admin interface.
 - [x] Create a client immediately in the UI and database, defer its Xray profile activation by roughly 12 seconds, and prevent failed refreshes from causing duplicate client creation attempts.
 - [x] Replace the client creation and activation toast messages with the requested concise wording.
+- [x] Show pending named clients as Activating with a disabled activation control, change missed delayed activation to Failed with a manual Activate retry, and retain immediate visible client creation.
+- [x] Replace the generic `/admin/clients` loading block with a skeleton matching the final Clients & routes header, panels, and registry layout.

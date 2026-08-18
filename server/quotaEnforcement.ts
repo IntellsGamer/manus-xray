@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
-import { activateDueGatewayClients, getVlessProfileByQuotaScheduleTaskUid } from "./db";
+import { activateDueGatewayClients, getVlessProfileByQuotaScheduleTaskUid, markGatewayClientActivationFailed } from "./db";
 import { sdk } from "./_core/sdk";
-import { enforceGatewayTrafficQuotas } from "./xrayRuntime";
+import { applyXrayProfile, enforceGatewayTrafficQuotas } from "./xrayRuntime";
 
 export function registerQuotaEnforcementRoute(app: Express) {
   app.post("/api/scheduled/quota-enforcement", async (req: Request, res: Response) => {
@@ -13,6 +13,14 @@ export function registerQuotaEnforcementRoute(app: Express) {
       if (!profile) return res.json({ ok: true, skipped: "orphaned-or-unconfigured-schedule" });
 
       const activatedClientIds = await activateDueGatewayClients();
+      if (activatedClientIds.length) {
+        try {
+          await applyXrayProfile(profile);
+        } catch (error) {
+          await Promise.all(activatedClientIds.map(markGatewayClientActivationFailed));
+          throw error;
+        }
+      }
       const result = await enforceGatewayTrafficQuotas(profile);
       return res.json({ ok: true, ...result, activatedClientIds, timestamp: new Date().toISOString() });
     } catch (error) {
