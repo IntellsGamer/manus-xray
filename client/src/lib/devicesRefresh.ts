@@ -1,0 +1,1 @@
+export const DEVICES_REFRESH_INTERVAL_MS = 60_000;

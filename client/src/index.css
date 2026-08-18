@@ -120,5 +120,13 @@
   .protocol-dialog { border-color: var(--border); background: var(--popover); color: var(--popover-foreground); }
   .route-row { display: grid; width: 100%; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.6rem; border-radius: 0.7rem; padding: 0.65rem; text-align: left; transition: background 160ms cubic-bezier(0.23, 1, 0.32, 1); }
   .route-row:hover { background: var(--accent); } .route-row span:first-child { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.78rem; font-weight: 650; } .route-row code { color: var(--muted-foreground); font-size: 0.7rem; }
+  @media (min-width: 1024px) {
+    form:has(#storage-limit) { grid-template-columns: repeat(12, minmax(0, 1fr)) !important; }
+    form:has(#storage-limit) > :first-child, form:has(#storage-limit) > :last-child { grid-column: span 12 / span 12 !important; }
+    form:has(#storage-limit) > :nth-child(2) { grid-column: span 4 / span 4 !important; }
+    form:has(#storage-limit) > :nth-child(3) { grid-column: span 2 / span 2 !important; }
+    form:has(#storage-limit) > :nth-child(4), form:has(#storage-limit) > :nth-child(5) { grid-column: span 3 / span 3 !important; }
+    form:has(#storage-limit) > :nth-child(2) > div { grid-template-columns: minmax(7.5rem, 1fr) 5.75rem !important; }
+  }
   @media (max-width: 640px) { .protocol-header { align-items: start; flex-direction: column; } }
 }

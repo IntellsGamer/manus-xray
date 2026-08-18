@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { parseCloudflareTraceCountry } from "@/lib/cloudflareTrace";
+import { DEVICES_REFRESH_INTERVAL_MS } from "@/lib/devicesRefresh";
 import { Clock3, Globe2, Laptop, MapPin, Monitor, RefreshCw, ShieldCheck, Smartphone, Tablet, Trash2 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 function relativeTime(value: Date) {
@@ -42,7 +43,8 @@ function DevicesLoading() {
 
 export default function Devices() {
   const utils = trpc.useUtils();
-  const devicesQuery = trpc.devices.list.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
+  const attemptedCountryTraceForDevice = useRef<number | null>(null);
+  const devicesQuery = trpc.devices.list.useQuery(undefined, { retry: false, refetchOnWindowFocus: false, refetchInterval: DEVICES_REFRESH_INTERVAL_MS, refetchIntervalInBackground: false });
   const reportCountry = trpc.devices.reportCountry.useMutation({
     onSuccess: async result => {
       if (result.success) await utils.devices.list.invalidate();
@@ -75,6 +77,8 @@ export default function Devices() {
   const currentDevice = devicesQuery.data?.devices.find(device => device.id === devicesQuery.data?.currentDeviceId);
   useEffect(() => {
     if (!currentDevice || currentDevice.countryCode || reportCountry.isPending) return;
+    if (attemptedCountryTraceForDevice.current === currentDevice.id) return;
+    attemptedCountryTraceForDevice.current = currentDevice.id;
     let cancelled = false;
     fetch("/cdn-cgi/trace", { cache: "no-store", credentials: "same-origin" })
       .then(response => response.ok ? response.text() : "")
@@ -84,7 +88,7 @@ export default function Devices() {
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [currentDevice?.countryCode, currentDevice?.id, reportCountry]);
+  }, [currentDevice?.countryCode, currentDevice?.id, reportCountry.isPending, reportCountry.mutate]);
 
   if (devicesQuery.isLoading || !devicesQuery.data) return <DashboardLayout><DevicesLoading /></DashboardLayout>;
   const { devices, currentDeviceId } = devicesQuery.data;

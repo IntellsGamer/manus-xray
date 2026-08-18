@@ -136,3 +136,5 @@
 - [x] Cache a successful owner authorization in a renewable three-day secure local session, expire inactive sessions, and avoid repeated upstream `/auth.me` checks that can hit provider rate limits.
 - [x] Add an owner-only Devices page with sidebar navigation, secure device registration, Cloudflare-provided IP/country/city when available, recognizable browser/device details, and individual or bulk removal controls.
 - [x] Preserve the device’s VPN exit IP while capturing and displaying Cloudflare-native country and city metadata for that IP when available.
+- [x] Fix the desktop client policy layout so the storage quota input has a readable width beside its unit selector without harming responsive behavior.
+- [x] Limit Devices background refreshes to one minute and preserve immediate cache updates only for explicit owner actions or Cloudflare country capture.
