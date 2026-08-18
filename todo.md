@@ -143,3 +143,4 @@
 - [x] Superseded by the owner’s requested closure of the transport investigation before direct Linux process testing was completed.
 - [x] Closed at the owner’s request: global subscription identity investigation completed with no payload change applied.
 - [x] Replace the overlap-prone desktop policy row with responsive two-column and extra-wide layouts so Storage, unit, Day limit, Speed, and Connections remain separate and readable.
+- [x] Make the Legacy credentials switch persist the global-profile state, reload Xray, update the UI after mutation, and remain correct after refresh.

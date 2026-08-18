@@ -46,9 +46,13 @@ export function ClientManagerContent() {
   const [speedLimitMbps, setSpeedLimitMbps] = useState("-1");
   const [connectionLimit, setConnectionLimit] = useState("-1");
   const [paths, setPaths] = useState({ wsPath: "/vless", vmessWsPath: "/vmess", trojanWsPath: "/trojan", socksWsPath: "/socks", globalProfileEnabled: true });
+  const [savedGlobalProfileEnabled, setSavedGlobalProfileEnabled] = useState(true);
 
   useEffect(() => {
-    if (profile) setPaths({ wsPath: profile.wsPath, vmessWsPath: profile.vmessWsPath, trojanWsPath: profile.trojanWsPath, socksWsPath: profile.socksWsPath, globalProfileEnabled: profile.globalProfileEnabled });
+    if (profile) {
+      setPaths({ wsPath: profile.wsPath, vmessWsPath: profile.vmessWsPath, trojanWsPath: profile.trojanWsPath, socksWsPath: profile.socksWsPath, globalProfileEnabled: profile.globalProfileEnabled });
+      setSavedGlobalProfileEnabled(profile.globalProfileEnabled);
+    }
   }, [profile]);
 
   const refresh = () => { utils.vless.get.invalidate(); utils.vless.clients.invalidate(); };
@@ -79,7 +83,23 @@ export function ClientManagerContent() {
     },
     onError: error => toast.error(error.message),
   });
-  const updatePaths = trpc.vless.updatePaths.useMutation({ onSuccess: () => { toast.success("Gateway paths saved"); refresh(); }, onError: error => toast.error(error.message) });
+  const updatePaths = trpc.vless.updatePaths.useMutation({ onSuccess: saved => { setPaths({ wsPath: saved.wsPath, vmessWsPath: saved.vmessWsPath, trojanWsPath: saved.trojanWsPath, socksWsPath: saved.socksWsPath, globalProfileEnabled: saved.globalProfileEnabled }); setSavedGlobalProfileEnabled(saved.globalProfileEnabled); toast.success("Gateway paths saved"); refresh(); }, onError: error => toast.error(error.message) });
+  const persistGlobalProfile = trpc.vless.updatePaths.useMutation({
+    onSuccess: saved => {
+      setPaths({ wsPath: saved.wsPath, vmessWsPath: saved.vmessWsPath, trojanWsPath: saved.trojanWsPath, socksWsPath: saved.socksWsPath, globalProfileEnabled: saved.globalProfileEnabled });
+      setSavedGlobalProfileEnabled(saved.globalProfileEnabled);
+      toast.success(saved.globalProfileEnabled ? "Legacy credentials enabled" : "Legacy credentials disabled");
+      refresh();
+    },
+    onError: error => {
+      setPaths(current => ({ ...current, globalProfileEnabled: savedGlobalProfileEnabled }));
+      toast.error(error.message);
+    },
+  });
+  useEffect(() => {
+    if (paths.globalProfileEnabled === savedGlobalProfileEnabled || persistGlobalProfile.isPending) return;
+    persistGlobalProfile.mutate(paths);
+  }, [paths, savedGlobalProfileEnabled, persistGlobalProfile.isPending, persistGlobalProfile.mutate]);
   const toggle = trpc.vless.setClientEnabled.useMutation({ onSuccess: () => { toast.success("Client state updated"); refresh(); }, onError: error => toast.error(error.message) });
   const rotate = trpc.vless.rotateClient.useMutation({ onSuccess: () => { toast.success("Client credentials and subscription token rotated"); refresh(); }, onError: error => toast.error(error.message) });
   const deleteClient = trpc.vless.deleteClient.useMutation({ onSuccess: () => { toast.success("Client permanently deleted"); refresh(); }, onError: error => toast.error(error.message) });
