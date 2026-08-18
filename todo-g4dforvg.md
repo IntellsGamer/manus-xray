@@ -22,3 +22,6 @@
 - [ ] Inspect and repair the currently published Terminal route after the reported live failure.
 - [ ] Verify the published Terminal WebSocket from an authenticated browser session.
 - [ ] Trace and fix the immediate post-login Terminal WebSocket disconnect.
+- [ ] Wait five minutes for the current published terminal revision to settle before live verification.
+- [ ] Perform the requested post-rollout authenticated Terminal connection check.
+- [ ] Check the published authenticated Terminal connection immediately without further waiting.

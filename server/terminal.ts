@@ -116,7 +116,8 @@ function trustedClientIp(req: IncomingMessage) {
 
 export function isTerminalOriginAllowed(req: IncomingMessage) {
   const origin = headerValue(req, "origin");
-  const host = headerValue(req, "host");
+  const forwardedHost = headerValue(req, "x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || headerValue(req, "host");
   if (!origin || !host) return false;
 
   try {
@@ -290,7 +291,7 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
 
 async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   if (!isTerminalOriginAllowed(req)) {
-    console.warn(`[Terminal] Rejected upgrade due to origin mismatch (origin=${headerValue(req, "origin") ?? "missing"}, host=${headerValue(req, "host") ?? "missing"}).`);
+    console.warn(`[Terminal] Rejected upgrade due to origin mismatch (origin=${headerValue(req, "origin") ?? "missing"}, host=${headerValue(req, "host") ?? "missing"}, forwardedHost=${headerValue(req, "x-forwarded-host") ?? "missing"}).`);
     rejectUpgrade(socket, 403, "Forbidden");
     return;
   }

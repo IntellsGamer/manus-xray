@@ -50,6 +50,12 @@ describe("terminal authorization boundary", () => {
       origin: "https://attacker.example.test",
       "x-forwarded-proto": "https",
     }))).toBe(false);
+    expect(isTerminalOriginAllowed(upgradeRequest({
+      host: "internal-gateway.a.run.app",
+      "x-forwarded-host": "gateway.example.test",
+      origin: "https://gateway.example.test",
+      "x-forwarded-proto": "https",
+    }))).toBe(true);
   });
 
   it("permits the terminal capability query for an authenticated administrator", async () => {
