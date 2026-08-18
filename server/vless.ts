@@ -95,7 +95,7 @@ export function buildXhttpUri(profile: VlessProfile) {
 
 export function buildClientXhttpUri(profile: VlessProfile, client: GatewayClient) {
   const clientProfile = profileForClient(profile, client);
-  return buildXhttpUriForPath(clientProfile, clientXhttpPath(client), `Nginx Gateway · ${client.name} VLESS XHTTP`);
+  return buildXhttpUriForPath(clientProfile, clientXhttpPath(client), "Nginx Gateway · VLESS XHTTP");
 }
 
 function publicWebSocketParams(profile: VlessProfile, path: string) {

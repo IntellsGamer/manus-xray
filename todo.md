@@ -146,3 +146,4 @@
 - [x] Make the Legacy credentials switch persist the global-profile state, reload Xray, update the UI after mutation, and remain correct after refresh.
 - [x] Use the available client policy-panel width effectively without reintroducing control overlap, and add validated VLESS-over-XHTTP support alongside WebSocket transport.
 - [x] Add VLESS/XHTTP to every named client alongside WebSocket, with each opaque client route subject to the same byte accounting, speed, connection, expiry, quota-disable, and forced-close controls.
+- [x] Make named-client VLESS/XHTTP URI labels match the global `Nginx Gateway · VLESS XHTTP` label.

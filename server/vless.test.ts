@@ -114,6 +114,7 @@ describe("VLESS profile serialization", () => {
     expect(new URL(clientDetails.vlessUri).searchParams.get("path")).toBe("/vless/named-client-route-token");
     expect(new URL(clientDetails.xhttpUri).searchParams.get("type")).toBe("xhttp");
     expect(new URL(clientDetails.xhttpUri).searchParams.get("path")).toBe("/xhttp/named-client-route-token");
+    expect(decodeURIComponent(new URL(clientDetails.xhttpUri).hash.slice(1))).toBe("Nginx Gateway · VLESS XHTTP");
     expect(JSON.parse(Buffer.from(clientDetails.vmessUri.replace("vmess://", ""), "base64").toString("utf8")).path).toBe("/vmess/named-client-route-token");
     expect(new URL(clientDetails.trojanUri).searchParams.get("path")).toBe("/trojan/named-client-route-token");
     expect(clientDetails.vmessUri).toContain(Buffer.from(namedClient.vmessUuid).toString("base64").slice(0, 0));
