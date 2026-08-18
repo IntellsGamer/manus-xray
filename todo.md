@@ -138,3 +138,8 @@
 - [x] Preserve the device’s VPN exit IP while capturing and displaying Cloudflare-native country and city metadata for that IP when available.
 - [x] Fix the desktop client policy layout so the storage quota input has a readable width beside its unit selector without harming responsive behavior.
 - [x] Limit Devices background refreshes to one minute and preserve immediate cache updates only for explicit owner actions or Cloudflare country capture.
+- [x] Closed at the owner’s request: VLESS route investigation completed with no gateway route change applied; continue only with the desktop policy-control overlap repair.
+- [x] Closed at the owner’s request: global Xray transport comparison no longer requires further work.
+- [x] Superseded by the owner’s requested closure of the transport investigation before direct Linux process testing was completed.
+- [x] Closed at the owner’s request: global subscription identity investigation completed with no payload change applied.
+- [x] Replace the overlap-prone desktop policy row with responsive two-column and extra-wide layouts so Storage, unit, Day limit, Speed, and Connections remain separate and readable.
