@@ -22,7 +22,7 @@ import {
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { adminRoutes } from "@/lib/adminNavigation";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import { Laptop, LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -31,6 +31,7 @@ import { Button } from "./ui/button";
 const menuItems = [
   { icon: LayoutDashboard, label: "Connection control", path: adminRoutes.overview },
   { icon: Users, label: "Clients & routes", path: adminRoutes.clients },
+  { icon: Laptop, label: "Devices", path: adminRoutes.devices },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

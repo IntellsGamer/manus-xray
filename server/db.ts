@@ -1,6 +1,7 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { GatewayClient, InsertUser, gatewayClients, subscriptionEvents, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
+import { GatewayClient, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
+import type { OwnerDeviceObservation } from "./ownerDevices";
 import { ENV } from './_core/env';
 import { createGatewayCredential, createSubscriptionToken, createVlessUuid, normaliseGatewayPaths, normaliseWsPath } from "./vless";
 
@@ -88,6 +89,41 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getOwnerDeviceByToken(ownerOpenId: string, deviceToken: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.select().from(ownerDevices).where(and(eq(ownerDevices.ownerOpenId, ownerOpenId), eq(ownerDevices.deviceToken, deviceToken))).limit(1);
+  return result[0];
+}
+
+export async function observeOwnerDevice(ownerOpenId: string, deviceToken: string, observation: OwnerDeviceObservation) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const now = new Date();
+  await db.insert(ownerDevices).values({ ownerOpenId, deviceToken, ...observation, firstSeenAt: now, lastSeenAt: now, revokedAt: null }).onDuplicateKeyUpdate({
+    set: { ...observation, lastSeenAt: now, revokedAt: null },
+  });
+  return getOwnerDeviceByToken(ownerOpenId, deviceToken);
+}
+
+export async function listOwnerDevices(ownerOpenId: string): Promise<OwnerDevice[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  return db.select().from(ownerDevices).where(and(eq(ownerDevices.ownerOpenId, ownerOpenId), isNull(ownerDevices.revokedAt))).orderBy(desc(ownerDevices.lastSeenAt));
+}
+
+export async function revokeOwnerDevice(ownerOpenId: string, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(ownerDevices).set({ revokedAt: new Date() }).where(and(eq(ownerDevices.ownerOpenId, ownerOpenId), eq(ownerDevices.id, id), isNull(ownerDevices.revokedAt)));
+}
+
+export async function revokeAllOwnerDevices(ownerOpenId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(ownerDevices).set({ revokedAt: new Date() }).where(and(eq(ownerDevices.ownerOpenId, ownerOpenId), isNull(ownerDevices.revokedAt)));
 }
 
 export async function getVlessProfile() {

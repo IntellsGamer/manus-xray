@@ -5,6 +5,8 @@ import { COOKIE_NAME, THREE_DAYS_MS } from "../shared/const";
 const database = vi.hoisted(() => ({
   getUserByOpenId: vi.fn(),
   upsertUser: vi.fn(),
+  getOwnerDeviceByToken: vi.fn(),
+  observeOwnerDevice: vi.fn(),
 }));
 
 vi.mock("./db", () => database);
@@ -27,6 +29,8 @@ describe("local owner session renewal", () => {
   it("issues a three-day local token and renews its secure cookie from a database-backed session without upstream identity lookup", async () => {
     database.getUserByOpenId.mockResolvedValue(owner);
     database.upsertUser.mockResolvedValue(undefined);
+    database.getOwnerDeviceByToken.mockResolvedValue(undefined);
+    database.observeOwnerDevice.mockResolvedValue(undefined);
     const upstreamIdentity = vi.spyOn(sdk, "getUserInfoWithJwt");
     const token = await sdk.createSessionToken(owner.openId, { name: owner.name });
     const claims = decodeJwt(token);
@@ -37,9 +41,14 @@ describe("local owner session renewal", () => {
       protocol: "https",
     } as never, { cookie } as never);
 
-    expect(authenticated).toEqual(owner);
+    expect(authenticated).toMatchObject(owner);
     expect(Number(claims.exp) - Number(claims.iat)).toBe(THREE_DAYS_MS / 1000);
     expect(upstreamIdentity).not.toHaveBeenCalled();
+    expect(database.observeOwnerDevice).toHaveBeenCalledWith(owner.openId, expect.any(String), expect.objectContaining({
+      ipAddress: null,
+      countryCode: null,
+      city: null,
+    }));
     expect(cookie).toHaveBeenCalledWith(COOKIE_NAME, expect.any(String), expect.objectContaining({
       maxAge: THREE_DAYS_MS,
       secure: true,

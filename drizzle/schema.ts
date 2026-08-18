@@ -1,4 +1,4 @@
-import { bigint, boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -96,3 +96,27 @@ export const subscriptionEvents = mysqlTable("subscription_events", {
 });
 
 export type SubscriptionEvent = typeof subscriptionEvents.$inferSelect;
+
+/** Owner-authorized browser sessions observed by the admin gateway. */
+export const ownerDevices = mysqlTable("owner_devices", {
+  id: int("id").autoincrement().primaryKey(),
+  ownerOpenId: varchar("ownerOpenId", { length: 64 }).notNull(),
+  deviceToken: varchar("deviceToken", { length: 64 }).notNull(),
+  deviceName: varchar("deviceName", { length: 160 }).notNull(),
+  deviceKind: varchar("deviceKind", { length: 24 }).notNull(),
+  browser: varchar("browser", { length: 64 }).notNull(),
+  operatingSystem: varchar("operatingSystem", { length: 64 }).notNull(),
+  userAgent: varchar("userAgent", { length: 512 }).notNull(),
+  ipAddress: varchar("ipAddress", { length: 64 }),
+  countryCode: varchar("countryCode", { length: 8 }),
+  city: varchar("city", { length: 128 }),
+  region: varchar("region", { length: 128 }),
+  firstSeenAt: timestamp("firstSeenAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  revokedAt: timestamp("revokedAt"),
+}, table => [
+  uniqueIndex("owner_devices_owner_token_unique").on(table.ownerOpenId, table.deviceToken),
+  index("owner_devices_owner_last_seen_idx").on(table.ownerOpenId, table.lastSeenAt),
+]);
+
+export type OwnerDevice = typeof ownerDevices.$inferSelect;

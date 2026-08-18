@@ -1,4 +1,4 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, THREE_DAYS_MS, decodeOAuthState } from "@shared/const";
+import { AXIOS_TIMEOUT_MS, COOKIE_NAME, DEVICE_COOKIE_NAME, THREE_DAYS_MS, decodeOAuthState } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
@@ -7,6 +7,7 @@ import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
+import { createOwnerDeviceToken, isOwnerDeviceToken, observeOwnerDeviceRequest } from "../ownerDevices";
 import { ENV } from "./env";
 import type {
   ExchangeTokenRequest,
@@ -23,6 +24,7 @@ export type SessionPayload = {
   openId: string;
   appId: string;
   name: string;
+  deviceToken?: string;
 };
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
@@ -166,13 +168,14 @@ class SDKServer {
    */
   async createSessionToken(
     openId: string,
-    options: { expiresInMs?: number; name?: string } = {}
+    options: { expiresInMs?: number; name?: string; deviceToken?: string } = {}
   ): Promise<string> {
     return this.signSession(
       {
         openId,
         appId: ENV.appId,
         name: options.name || "",
+        deviceToken: options.deviceToken,
       },
       options
     );
@@ -191,6 +194,7 @@ class SDKServer {
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
+      deviceToken: payload.deviceToken,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuedAt(Math.floor(issuedAt / 1000))
@@ -200,7 +204,7 @@ class SDKServer {
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; deviceToken?: string } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -211,7 +215,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+      const { openId, appId, name, deviceToken } = payload as Record<string, unknown>;
 
       if (
         !isNonEmptyString(openId) ||
@@ -222,10 +226,14 @@ class SDKServer {
         return null;
       }
 
+      const verifiedDeviceToken = typeof deviceToken === "string" && isOwnerDeviceToken(deviceToken)
+        ? deviceToken
+        : undefined;
       return {
         openId,
         appId,
         name,
+        deviceToken: verifiedDeviceToken,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -261,6 +269,7 @@ class SDKServer {
     // 1. Prefer the session cookie (regular OAuth login).
     const cookies = this.parseCookies(req.headers.cookie);
     let sessionToken = cookies.get(COOKIE_NAME);
+    const usingAuthorizationFallback = !sessionToken;
 
     // 2. Fallback to the Authorization header (Preview auto-login via
     //    sessionStorage), used when the browser blocks iframe cookies such as
@@ -313,6 +322,26 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    let deviceToken: string | undefined;
+    if (user.role === "admin") {
+      const requestedDeviceToken = cookies.get(DEVICE_COOKIE_NAME);
+      if (session.deviceToken && requestedDeviceToken !== session.deviceToken) {
+        throw ForbiddenError("Device session mismatch");
+      }
+      if (session.deviceToken) {
+        deviceToken = session.deviceToken;
+      } else if (isOwnerDeviceToken(requestedDeviceToken)) {
+        deviceToken = requestedDeviceToken;
+      } else if (!usingAuthorizationFallback) {
+        deviceToken = createOwnerDeviceToken();
+      }
+      if (deviceToken) {
+        const existingDevice = await db.getOwnerDeviceByToken(user.openId, deviceToken);
+        if (existingDevice?.revokedAt) throw ForbiddenError("This device has been removed");
+        await db.observeOwnerDevice(user.openId, deviceToken, observeOwnerDeviceRequest(req));
+      }
+    }
+
     await db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,
@@ -324,15 +353,22 @@ class SDKServer {
     if (res) {
       const refreshedToken = await this.createSessionToken(user.openId, {
         name: session.name,
+        deviceToken,
         expiresInMs: THREE_DAYS_MS,
       });
       res.cookie(COOKIE_NAME, refreshedToken, {
         ...getSessionCookieOptions(req),
         maxAge: THREE_DAYS_MS,
       });
+      if (deviceToken) {
+        res.cookie(DEVICE_COOKIE_NAME, deviceToken, {
+          ...getSessionCookieOptions(req),
+          maxAge: THREE_DAYS_MS,
+        });
+      }
     }
 
-    return user;
+    return { ...user, deviceToken };
   }
 }
 
@@ -342,6 +378,7 @@ const CRON_OPEN_ID_PREFIX = "cron_";
 export type AuthenticatedUser = User & {
   taskUid?: string;
   isCron?: boolean;
+  deviceToken?: string;
 };
 
 function buildCronUser(

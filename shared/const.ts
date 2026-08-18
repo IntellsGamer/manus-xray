@@ -1,4 +1,5 @@
 export const COOKIE_NAME = "app_session_id";
+export const DEVICE_COOKIE_NAME = "gateway_device_id";
 export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
 export const THREE_DAYS_MS = 1000 * 60 * 60 * 24 * 3;
 export const AXIOS_TIMEOUT_MS = 30_000;

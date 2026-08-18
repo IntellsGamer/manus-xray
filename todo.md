@@ -134,3 +134,4 @@
 - [x] Superseded by the required real-time route-keyed gateway meter: Xray counter availability is no longer a quota-enforcement dependency.
 - [x] Restore route-keyed real-time gateway byte accounting as the authoritative quota source, update usage during active tunnels, and validate a disposable 10 MB client transfer with quota enforcement and cleanup.
 - [x] Cache a successful owner authorization in a renewable three-day secure local session, expire inactive sessions, and avoid repeated upstream `/auth.me` checks that can hit provider rate limits.
+- [x] Add an owner-only Devices page with sidebar navigation, secure device registration, Cloudflare-provided IP/country/city when available, recognizable browser/device details, and individual or bulk removal controls.
