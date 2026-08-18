@@ -130,6 +130,6 @@
 - [x] Normalize IPv6 source identities to their /64 network for finite per-client connection limits while retaining exact IPv4 identities and Cloudflare header extraction.
 - [x] Migrate per-client quota usage persistence and enforcement from backend bridge-byte deltas back to Xray-core per-user counters across VLESS, VMess, Trojan, and SOCKS5.
 - [x] Preserve accurate quota reset, browser subscription status, client-management wording, scheduled enforcement, and forced tunnel closure under Xray-based accounting.
-- [ ] Create an isolated 10 MB temporary client, transfer a real payload through its gateway route, and verify Xray counters, persisted usage, quota enforcement, and cleanup end to end.
-- [ ] Remove the in-memory child-process requirement from Xray counter sampling, preserving safe unavailable-counter handling when the local Xray API cannot be reached.
+- [x] Superseded by the required real-time route-keyed gateway meter: do not use Xray counters as quota authority; validate the 10 MB temporary client lifecycle through bridge-byte persistence, enforcement, and cleanup instead.
+- [x] Superseded by the required real-time route-keyed gateway meter: Xray counter availability is no longer a quota-enforcement dependency.
 - [x] Restore route-keyed real-time gateway byte accounting as the authoritative quota source, update usage during active tunnels, and validate a disposable 10 MB client transfer with quota enforcement and cleanup.
