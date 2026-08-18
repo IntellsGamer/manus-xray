@@ -90,6 +90,7 @@ const storedClient = {
   trafficStatsSnapshotBytes: 0,
   dayLimit: -1,
   speedLimitMbps: -1,
+  connectionLimit: -1,
   expiresAt: null,
   subscriptionDeliveryCount: 0,
   lastSubscriptionAt: null,
@@ -124,6 +125,7 @@ describe("client lifecycle mutations", () => {
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
       dayLimit: 30,
       speedLimitMbps: 25,
+      connectionLimit: 3,
       expiresAt: new Date("2026-09-16T00:00:00.000Z"),
     });
     mocks.deleteGatewayClient.mockResolvedValue(undefined);
@@ -135,17 +137,18 @@ describe("client lifecycle mutations", () => {
     mocks.resetGatewayClientTrafficUsage.mockResolvedValue({ ...storedClient, trafficUsedBytes: 0, trafficStatsSnapshotBytes: 0, quotaExhaustedAt: null });
   });
 
-  it("persists a valid storage, day, and Mbps policy and returns the rendered state", async () => {
+  it("persists a valid storage, day, Mbps, and connection policy and returns the rendered state", async () => {
     const caller = vlessRouter.createCaller(adminContext());
-    const result = await caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30, speedLimitMbps: 25 });
+    const result = await caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30, speedLimitMbps: 25, connectionLimit: 3 });
 
     expect(mocks.updateGatewayClientPolicy).toHaveBeenCalledWith(storedClient.id, {
       id: storedClient.id,
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
       dayLimit: 30,
       speedLimitMbps: 25,
+      connectionLimit: 3,
     });
-    expect(result).toMatchObject({ trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30, speedLimitMbps: 25 });
+    expect(result).toMatchObject({ trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30, speedLimitMbps: 25, connectionLimit: 3 });
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
   });
 
@@ -153,11 +156,11 @@ describe("client lifecycle mutations", () => {
     const caller = vlessRouter.createCaller(adminContext());
     const creationRequestId = "ce1b6a8a-0000-4000-8000-000000000001";
     const result = await caller.createClient({ name: "Unlimited default", creationRequestId });
-    expect(mocks.createGatewayClient).toHaveBeenCalledWith({ name: "Unlimited default", trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1, creationRequestId });
+    expect(mocks.createGatewayClient).toHaveBeenCalledWith({ name: "Unlimited default", trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1, connectionLimit: -1, creationRequestId });
     expect(mocks.applyXrayProfile).not.toHaveBeenCalled();
     expect(result).toMatchObject({ enabled: false, activationPending: true });
 
-    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: 0, connectionLimit: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("reloads Xray only when a due client activation succeeds", async () => {
@@ -195,8 +198,9 @@ describe("client lifecycle mutations", () => {
   it("rejects invalid quota and day-limit requests before persistence", async () => {
     const caller = vlessRouter.createCaller(adminContext());
 
-    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -2, dayLimit: 30, speedLimitMbps: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 0, dayLimit: 3651, speedLimitMbps: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -2, dayLimit: 30, speedLimitMbps: -1, connectionLimit: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: 0, dayLimit: 3651, speedLimitMbps: -1, connectionLimit: -1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1, connectionLimit: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(mocks.updateGatewayClientPolicy).not.toHaveBeenCalled();
   });
 

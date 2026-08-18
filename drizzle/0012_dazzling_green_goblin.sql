@@ -1,0 +1,1 @@
+ALTER TABLE `gateway_clients` ADD `connectionLimit` int DEFAULT -1 NOT NULL;

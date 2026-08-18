@@ -254,7 +254,7 @@ export async function getGatewayClientBySubscriptionToken(subscriptionToken: str
   return result[0];
 }
 
-export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number; speedLimitMbps?: number; creationRequestId?: string }): Promise<GatewayClient> {
+export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number; speedLimitMbps?: number; connectionLimit?: number; creationRequestId?: string }): Promise<GatewayClient> {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   if (input.creationRequestId) {
@@ -263,6 +263,7 @@ export async function createGatewayClient(input: { name: string; trafficLimitByt
   }
   const dayLimit = input.dayLimit ?? -1;
   const speedLimitMbps = input.speedLimitMbps ?? -1;
+  const connectionLimit = input.connectionLimit ?? -1;
   const activationDueAt = input.creationRequestId ? new Date(Date.now() + 12_000) : null;
   let result;
   try {
@@ -282,6 +283,7 @@ export async function createGatewayClient(input: { name: string; trafficLimitByt
       trafficLimitBytes: input.trafficLimitBytes ?? -1,
       dayLimit,
       speedLimitMbps,
+      connectionLimit,
       expiresAt: dayLimit > 0 ? new Date(Date.now() + dayLimit * 86_400_000) : null,
     });
   } catch (error) {
@@ -375,7 +377,7 @@ export async function deleteGatewayClient(id: number) {
   await db.delete(gatewayClients).where(eq(gatewayClients.id, id));
 }
 
-export async function updateGatewayClientPolicy(id: number, input: { trafficLimitBytes: number; dayLimit: number; speedLimitMbps: number }) {
+export async function updateGatewayClientPolicy(id: number, input: { trafficLimitBytes: number; dayLimit: number; speedLimitMbps: number; connectionLimit: number }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   const existing = await getGatewayClientById(id);
@@ -384,6 +386,7 @@ export async function updateGatewayClientPolicy(id: number, input: { trafficLimi
     trafficLimitBytes: input.trafficLimitBytes,
     dayLimit: input.dayLimit,
     speedLimitMbps: input.speedLimitMbps,
+    connectionLimit: input.connectionLimit,
     expiresAt: input.dayLimit > 0 ? new Date(Date.now() + input.dayLimit * 86_400_000) : null,
     quotaExhaustedAt: input.trafficLimitBytes < 0 || input.trafficLimitBytes > existing.trafficUsedBytes ? null : existing.quotaExhaustedAt,
   }).where(eq(gatewayClients.id, id));

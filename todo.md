@@ -123,3 +123,6 @@
 - [x] Replace the client creation and activation toast messages with the requested concise wording.
 - [x] Show pending named clients as Activating with a disabled activation control, change missed delayed activation to Failed with a manual Activate retry, and retain immediate visible client creation.
 - [x] Replace the generic `/admin/clients` loading block with a skeleton matching the final Clients & routes header, panels, and registry layout.
+- [x] Add a persistent per-client concurrent connection limit with `-1` as the unlimited default and migrate existing clients to unlimited.
+- [x] Enforce each finite connection cap across concurrent VLESS, VMess, Trojan, and SOCKS5 gateway tunnels without disrupting other clients.
+- [x] Add unified connection-limit controls, summaries, subscription status, lifecycle behavior, and deterministic regression coverage matching the existing speed-limit feature.

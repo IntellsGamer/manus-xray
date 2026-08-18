@@ -5,7 +5,7 @@ import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
 import { resolvePublicGatewayRoute } from "./vless";
 import { applyXrayProfile, enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
-import { trackGatewayTunnel } from "./gatewayTunnels";
+import { reserveGatewayClientTunnel, trackGatewayTunnel } from "./gatewayTunnels";
 
 type UpgradeDependencies = {
   getProfile?: () => Promise<VlessProfile | undefined>;
@@ -163,15 +163,28 @@ async function bridgeUpgrade(
     socket.destroy();
     return;
   }
+  const releaseConnectionReservation = route.client ? reserveGatewayClientTunnel(route.client.id, route.client.connectionLimit ?? -1) : undefined;
+  if (route.client && !releaseConnectionReservation) {
+    socket.destroy();
+    return;
+  }
   await dependencies.enforceQuota(profile);
-  await dependencies.applyProfile(profile);
+  try {
+    await dependencies.applyProfile(profile);
+  } catch (error) {
+    releaseConnectionReservation?.();
+    throw error;
+  }
   const upstream = net.createConnection({ host: "127.0.0.1", port: route.port });
-  const connectTimeout = setTimeout(() => closeSockets(socket, upstream), 5000);
+  const connectTimeout = setTimeout(() => {
+    releaseConnectionReservation?.();
+    closeSockets(socket, upstream);
+  }, 5000);
 
   upstream.once("connect", () => {
     clearTimeout(connectTimeout);
     upstream.write(buildUpgradeRequest(req, route.port, route.internalPath));
-    trackGatewayTunnel(socket, upstream);
+    trackGatewayTunnel(socket, upstream, route.client?.id, releaseConnectionReservation);
     if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
     const speedLimiter = route.client ? limiterForClient(route.client) : undefined;
     if (speedLimiter) {
@@ -187,11 +200,12 @@ async function bridgeUpgrade(
   });
   upstream.once("error", () => {
     clearTimeout(connectTimeout);
+    releaseConnectionReservation?.();
     socket.destroy();
   });
-  socket.once("error", () => upstream.destroy());
-  socket.once("close", () => upstream.destroy());
-  upstream.once("close", () => socket.destroy());
+  socket.once("error", () => { releaseConnectionReservation?.(); upstream.destroy(); });
+  socket.once("close", () => { releaseConnectionReservation?.(); upstream.destroy(); });
+  upstream.once("close", () => { releaseConnectionReservation?.(); socket.destroy(); });
 }
 
 /**

@@ -16,7 +16,7 @@ vi.mock("./xrayRuntime", () => ({ enforceGatewayTrafficQuotas: runtimeMock.enfor
 import { registerSubscriptionRoute } from "./subscription";
 
 const namedClient = {
-  id: 4, name: "Browser client", enabled: true, vlessUuid: "faec6149-bbf5-45f8-a1bc-657d64023841", vmessUuid: "be1d4606-5320-450d-82ae-2e447f6a7d8b", trojanPassword: "named-trojan-password", socksUsername: "client-browser", socksPassword: "named-socks-password", subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", connectionToken: "browser-client-route-token", trafficLimitBytes: 10 * 1024 * 1024, trafficUsedBytes: 2 * 1024 * 1024, trafficStatsSnapshotBytes: 0, dayLimit: -1, speedLimitMbps: 25, expiresAt: null, lastSubscriptionAt: null, subscriptionDeliveryCount: 0, createdAt: new Date(), updatedAt: new Date(),
+  id: 4, name: "Browser client", enabled: true, vlessUuid: "faec6149-bbf5-45f8-a1bc-657d64023841", vmessUuid: "be1d4606-5320-450d-82ae-2e447f6a7d8b", trojanPassword: "named-trojan-password", socksUsername: "client-browser", socksPassword: "named-socks-password", subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", connectionToken: "browser-client-route-token", trafficLimitBytes: 10 * 1024 * 1024, trafficUsedBytes: 2 * 1024 * 1024, trafficStatsSnapshotBytes: 0, dayLimit: -1, speedLimitMbps: 25, connectionLimit: 3, expiresAt: null, lastSubscriptionAt: null, subscriptionDeliveryCount: 0, createdAt: new Date(), updatedAt: new Date(),
 };
 
 const profile: VlessProfile = {
@@ -102,14 +102,17 @@ describe("subscription route", () => {
     expect(html).toContain("Speed limit");
     expect(html).toContain("25 Mbps");
     expect(html).toContain("Shared across all connections");
+    expect(html).toContain("Connections");
+    expect(html).toContain("3 concurrent");
+    expect(html).toContain("Shared across all protocols");
     expect(html).not.toContain("Gateway endpoint");
     expect(html).not.toContain("Subscription deliveries");
     expect(html).not.toContain("Last observed subscription delivery");
   });
 
-  it("renders the unlimited speed sentinel as a clear subscription status", async () => {
+  it("renders unlimited speed and connection sentinels as clear subscription status", async () => {
     databaseMock.getVlessProfileBySubscriptionToken.mockResolvedValue(undefined);
-    databaseMock.getGatewayClientBySubscriptionToken.mockResolvedValue({ ...namedClient, speedLimitMbps: -1 });
+    databaseMock.getGatewayClientBySubscriptionToken.mockResolvedValue({ ...namedClient, speedLimitMbps: -1, connectionLimit: -1 });
     databaseMock.getVlessProfile.mockResolvedValue(profile);
     databaseMock.recordSubscriptionDelivery.mockResolvedValue(undefined);
 
@@ -119,5 +122,7 @@ describe("subscription route", () => {
     const html = await response.text();
     expect(html).toContain("Speed limit");
     expect(html).toContain("No Mbps cap");
+    expect(html).toContain("Connections");
+    expect(html).toContain("No concurrent tunnel cap");
   });
 });

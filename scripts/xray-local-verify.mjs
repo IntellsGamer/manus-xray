@@ -51,6 +51,8 @@ const temporaryQuotaClient = {
   trafficUsedBytes: 0,
   trafficStatsSnapshotBytes: 0,
   dayLimit: -1,
+  speedLimitMbps: -1,
+  connectionLimit: -1,
   expiresAt: null,
   lastSubscriptionAt: null,
   subscriptionDeliveryCount: 0,

@@ -25,7 +25,7 @@ function formatBytes(bytes: number) {
   return `${Math.round((bytes / 1024 ** 2) * 100) / 100} MB`;
 }
 
-function quotaCards(quota: { trafficLimitBytes: number; trafficUsedBytes: number; trafficUsageAvailable: boolean; dayLimit: number; speedLimitMbps: number; expiresAt?: Date | null }) {
+function quotaCards(quota: { trafficLimitBytes: number; trafficUsedBytes: number; trafficUsageAvailable: boolean; dayLimit: number; speedLimitMbps: number; connectionLimit: number; expiresAt?: Date | null }) {
   const data = quota.trafficLimitBytes < 0
     ? { title: "Unlimited", detail: `${formatBytes(quota.trafficUsedBytes)} used` }
     : { title: `${formatBytes(Math.max(0, quota.trafficLimitBytes - quota.trafficUsedBytes))} left`, detail: `${formatBytes(quota.trafficUsedBytes)} / ${formatBytes(quota.trafficLimitBytes)} used` };
@@ -37,10 +37,13 @@ function quotaCards(quota: { trafficLimitBytes: number; trafficUsedBytes: number
   const speed = quota.speedLimitMbps < 0
     ? { title: "Unlimited", detail: "No Mbps cap" }
     : { title: `${quota.speedLimitMbps} Mbps`, detail: "Shared across all connections" };
-  return `<article class="card"><span>Data quota</span><strong>${escapeHtml(data.title)}</strong><small>${escapeHtml(data.detail)}</small></article><article class="card"><span>Validity</span><strong>${escapeHtml(days.title)}</strong><small>${escapeHtml(days.detail)}</small></article><article class="card"><span>Speed limit</span><strong>${escapeHtml(speed.title)}</strong><small>${escapeHtml(speed.detail)}</small></article>`;
+  const connections = quota.connectionLimit < 0
+    ? { title: "Unlimited", detail: "No concurrent tunnel cap" }
+    : { title: `${quota.connectionLimit} concurrent`, detail: "Shared across all protocols" };
+  return `<article class="card"><span>Data quota</span><strong>${escapeHtml(data.title)}</strong><small>${escapeHtml(data.detail)}</small></article><article class="card"><span>Validity</span><strong>${escapeHtml(days.title)}</strong><small>${escapeHtml(days.detail)}</small></article><article class="card"><span>Speed limit</span><strong>${escapeHtml(speed.title)}</strong><small>${escapeHtml(speed.detail)}</small></article><article class="card"><span>Connections</span><strong>${escapeHtml(connections.title)}</strong><small>${escapeHtml(connections.detail)}</small></article>`;
 }
 
-function statusPage(input: { name: string; enabled: boolean; paths: string[]; imports?: string[]; quota?: { trafficLimitBytes: number; trafficUsedBytes: number; trafficUsageAvailable: boolean; dayLimit: number; speedLimitMbps: number; expiresAt?: Date | null } }) {
+function statusPage(input: { name: string; enabled: boolean; paths: string[]; imports?: string[]; quota?: { trafficLimitBytes: number; trafficUsedBytes: number; trafficUsageAvailable: boolean; dayLimit: number; speedLimitMbps: number; connectionLimit: number; expiresAt?: Date | null } }) {
   const pathRows = input.paths.map(path => `<code>${escapeHtml(path)}</code>`).join("");
   const state = input.enabled ? "Active" : "Disabled";
   const stateClass = input.enabled ? "is-active" : "is-disabled";
@@ -96,7 +99,7 @@ async function serveSubscription(req: Request, res: Response) {
       name: client.name, enabled: client.enabled,
       paths: [paths.vless, paths.vmess, paths.trojan, paths.socks],
       imports: [details.vlessUri, details.vmessUri, details.trojanUri],
-      quota: { trafficLimitBytes: client.trafficLimitBytes, trafficUsedBytes: client.trafficUsedBytes, trafficUsageAvailable: true, dayLimit: client.dayLimit, speedLimitMbps: client.speedLimitMbps, expiresAt: client.expiresAt },
+      quota: { trafficLimitBytes: client.trafficLimitBytes, trafficUsedBytes: client.trafficUsedBytes, trafficUsageAvailable: true, dayLimit: client.dayLimit, speedLimitMbps: client.speedLimitMbps, connectionLimit: client.connectionLimit, expiresAt: client.expiresAt },
     }));
     return;
   }

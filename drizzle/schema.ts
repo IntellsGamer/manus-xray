@@ -74,6 +74,7 @@ export const gatewayClients = mysqlTable("gateway_clients", {
   quotaExhaustedAt: timestamp("quotaExhaustedAt"),
   dayLimit: int("dayLimit").notNull().default(-1),
   speedLimitMbps: int("speedLimitMbps").notNull().default(-1),
+  connectionLimit: int("connectionLimit").notNull().default(-1),
   expiresAt: timestamp("expiresAt"),
   lastSubscriptionAt: timestamp("lastSubscriptionAt"),
   subscriptionDeliveryCount: int("subscriptionDeliveryCount").notNull().default(0),

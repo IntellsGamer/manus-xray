@@ -4,7 +4,7 @@ import { AddressInfo } from "net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VlessProfile } from "../drizzle/schema";
 import { ClientSpeedLimiter, createTunnelUsageFlusher, registerVlessUpgradeProxy, speedLimitBytesPerSecond } from "./vlessUpgradeProxy";
-import { activeGatewayTunnelCount, closeActiveGatewayTunnels } from "./gatewayTunnels";
+import { activeGatewayTunnelCount, activeGatewayTunnelCountForClient, closeActiveGatewayTunnels } from "./gatewayTunnels";
 
 const profile: VlessProfile = {
   id: 1,
@@ -236,6 +236,38 @@ describe("VLESS WebSocket upgrade bridge", () => {
     ]);
 
     expect(Math.max(...durations)).toBeGreaterThanOrEqual(900);
+  });
+
+  it("rejects a second concurrent VLESS or VMess tunnel for one finite-cap client and admits it after capacity is released", async () => {
+    const namedClient = { id: 55, enabled: true, connectionToken: "shared-connection-cap-route", expiresAt: null, connectionLimit: 1 } as unknown as import("../drizzle/schema").GatewayClient;
+    const respond = (socket: Socket) => {
+      socket.once("data", () => socket.write("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
+    };
+    const vlessUpstream = createTcpServer(respond);
+    const vmessUpstream = createTcpServer(respond);
+    const internalPort = await listenAdjacent(vlessUpstream, vmessUpstream);
+    const applyProfile = vi.fn().mockResolvedValue(undefined);
+    const bridge = createHttpServer((_request, response) => response.end("not found"));
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      getClients: async () => [namedClient],
+      applyProfile,
+      internalPort: () => internalPort,
+      recordTraffic: vi.fn().mockResolvedValue({ trafficLimitBytes: -1, trafficUsedBytes: 0 }),
+      enforceQuota: vi.fn().mockResolvedValue(undefined),
+    });
+    const bridgePort = await listen(bridge);
+
+    const first = await upgradeWithBufferedPayload(bridgePort, "/vless/shared-connection-cap-route", "", true);
+    expect(activeGatewayTunnelCountForClient(namedClient.id)).toBe(1);
+    const rejected = await upgrade(bridgePort, "/vmess/shared-connection-cap-route");
+    expect(rejected.error).toBeInstanceOf(Error);
+    expect(applyProfile).toHaveBeenCalledTimes(1);
+
+    first.destroy();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    expect(activeGatewayTunnelCountForClient(namedClient.id)).toBe(0);
+    await expect(upgrade(bridgePort, "/vmess/shared-connection-cap-route")).resolves.toMatchObject({ statusCode: 101 });
   });
 
   it("persists concurrent bridge deltas in order and enforces the quota when the accumulated total reaches its threshold", async () => {
