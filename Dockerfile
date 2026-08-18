@@ -2,7 +2,7 @@ FROM node:22-slim
 
 ARG XRAY_VERSION=26.7.28
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential ca-certificates curl unzip \
+    && apt-get install -y --no-install-recommends build-essential ca-certificates curl python3 unzip \
     && curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip" -o /tmp/xray.zip \
     && unzip -q /tmp/xray.zip -d /tmp/xray \
     && install -m 755 /tmp/xray/xray /usr/local/bin/xray \
@@ -10,9 +10,11 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY . .
-RUN npm install -g corepack@latest \
-    && corepack pnpm install \
-    && corepack pnpm rebuild node-pty \
+RUN npm install -g corepack@latest node-gyp \
+    && corepack pnpm install --ignore-scripts \
+    && cd /app/node_modules/.pnpm/node-pty@1.1.0/node_modules/node-pty \
+    && node-gyp rebuild \
+    && cd /app \
     && node -e "require('node-pty')" \
     && corepack pnpm run build
 

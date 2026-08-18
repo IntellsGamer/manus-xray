@@ -12,3 +12,4 @@
 - [x] Repair the production image so node-pty’s native binding is built and loadable at application startup.
 - [x] Validate the repaired deployment build and save a corrected published checkpoint.
 - [ ] Verify the corrected published revision completes its live container startup check without a node-pty loading error.
+- [x] Compile node-pty directly in the Docker image rather than relying on the package manager’s blocked lifecycle script.
