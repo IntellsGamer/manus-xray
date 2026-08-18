@@ -5,6 +5,7 @@ const database = vi.hoisted(() => ({
   listOwnerDevices: vi.fn(),
   revokeOwnerDevice: vi.fn(),
   revokeAllOwnerDevices: vi.fn(),
+  updateOwnerDeviceCountry: vi.fn(),
 }));
 
 vi.mock("./db", () => database);
@@ -59,5 +60,13 @@ describe("owner devices router", () => {
 
     expect(database.revokeAllOwnerDevices).toHaveBeenCalledWith("owner");
     expect(cleared).toEqual(expect.arrayContaining(["app_session_id", "gateway_device_id"]));
+  });
+
+  it("persists a same-origin Cloudflare trace country only for the authenticated device", async () => {
+    database.updateOwnerDeviceCountry.mockResolvedValue(undefined);
+
+    await expect(devicesRouter.createCaller(context().ctx).reportCountry({ countryCode: "DE" })).resolves.toEqual({ success: true });
+
+    expect(database.updateOwnerDeviceCountry).toHaveBeenCalledWith("owner", token, "DE");
   });
 });

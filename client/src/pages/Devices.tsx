@@ -4,7 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
+import { parseCloudflareTraceCountry } from "@/lib/cloudflareTrace";
 import { Clock3, Globe2, Laptop, MapPin, Monitor, RefreshCw, ShieldCheck, Smartphone, Tablet, Trash2 } from "lucide-react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 
 function relativeTime(value: Date) {
@@ -25,6 +27,15 @@ function DeviceIcon({ kind }: { kind: string }) {
   return <Laptop className={className} />;
 }
 
+function countryLabel(countryCode: string | null) {
+  if (!countryCode) return "Country unavailable";
+  try {
+    return new Intl.DisplayNames([navigator.language], { type: "region" }).of(countryCode) || countryCode;
+  } catch {
+    return countryCode;
+  }
+}
+
 function DevicesLoading() {
   return <div className="protocol-shell min-h-full"><div className="mx-auto max-w-6xl space-y-5 py-2 sm:py-5"><header className="protocol-header"><Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-9 w-48" /><Skeleton className="mt-3 h-4 w-96 max-w-full" /></header><section className="grid gap-4 md:grid-cols-2"><Skeleton className="h-52" /><Skeleton className="h-52" /></section></div></div>;
 }
@@ -32,6 +43,11 @@ function DevicesLoading() {
 export default function Devices() {
   const utils = trpc.useUtils();
   const devicesQuery = trpc.devices.list.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
+  const reportCountry = trpc.devices.reportCountry.useMutation({
+    onSuccess: async result => {
+      if (result.success) await utils.devices.list.invalidate();
+    },
+  });
   const remove = trpc.devices.remove.useMutation({
     onSuccess: async (_result, variables) => {
       if (variables.id === devicesQuery.data?.currentDeviceId) {
@@ -55,6 +71,20 @@ export default function Devices() {
     },
     onError: error => toast.error(error.message),
   });
+
+  const currentDevice = devicesQuery.data?.devices.find(device => device.id === devicesQuery.data?.currentDeviceId);
+  useEffect(() => {
+    if (!currentDevice || currentDevice.countryCode || reportCountry.isPending) return;
+    let cancelled = false;
+    fetch("/cdn-cgi/trace", { cache: "no-store", credentials: "same-origin" })
+      .then(response => response.ok ? response.text() : "")
+      .then(trace => {
+        const countryCode = parseCloudflareTraceCountry(trace);
+        if (!cancelled && countryCode) reportCountry.mutate({ countryCode });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [currentDevice?.countryCode, currentDevice?.id, reportCountry]);
 
   if (devicesQuery.isLoading || !devicesQuery.data) return <DashboardLayout><DevicesLoading /></DashboardLayout>;
   const { devices, currentDeviceId } = devicesQuery.data;

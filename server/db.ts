@@ -114,6 +114,12 @@ export async function listOwnerDevices(ownerOpenId: string): Promise<OwnerDevice
   return db.select().from(ownerDevices).where(and(eq(ownerDevices.ownerOpenId, ownerOpenId), isNull(ownerDevices.revokedAt))).orderBy(desc(ownerDevices.lastSeenAt));
 }
 
+export async function updateOwnerDeviceCountry(ownerOpenId: string, deviceToken: string, countryCode: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(ownerDevices).set({ countryCode }).where(and(eq(ownerDevices.ownerOpenId, ownerOpenId), eq(ownerDevices.deviceToken, deviceToken), isNull(ownerDevices.revokedAt)));
+}
+
 export async function revokeOwnerDevice(ownerOpenId: string, id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
