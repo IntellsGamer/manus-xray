@@ -85,6 +85,22 @@ export const gatewayClients = mysqlTable("gateway_clients", {
 export type GatewayClient = typeof gatewayClients.$inferSelect;
 export type InsertGatewayClient = typeof gatewayClients.$inferInsert;
 
+/** Reusable client-policy presets. They never contain client credentials or usage. */
+export const clientPolicyTemplates = mysqlTable("client_policy_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  trafficLimitBytes: bigint("trafficLimitBytes", { mode: "number" }).notNull().default(-1),
+  dayLimit: int("dayLimit").notNull().default(-1),
+  speedLimitMbps: int("speedLimitMbps").notNull().default(-1),
+  connectionLimit: int("connectionLimit").notNull().default(-1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  uniqueIndex("client_policy_templates_name_unique").on(table.name),
+]);
+
+export type ClientPolicyTemplate = typeof clientPolicyTemplates.$inferSelect;
+
 /** Real delivery observations for subscription routes; this is not proxy traffic accounting. */
 export const subscriptionEvents = mysqlTable("subscription_events", {
   id: int("id").autoincrement().primaryKey(),

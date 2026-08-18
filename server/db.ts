@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { GatewayClient, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
+import { ClientPolicyTemplate, clientPolicyTemplates, GatewayClient, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import type { OwnerDeviceObservation } from "./ownerDevices";
 import { ENV } from './_core/env';
 import { createGatewayCredential, createSubscriptionToken, createVlessUuid, normaliseGatewayPaths, normaliseWsPath } from "./vless";
@@ -280,6 +280,130 @@ export async function listGatewayClients() {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   return db.select().from(gatewayClients).orderBy(desc(gatewayClients.createdAt));
+}
+
+export type ClientPolicyTemplateInput = {
+  name: string;
+  trafficLimitBytes: number;
+  dayLimit: number;
+  speedLimitMbps: number;
+  connectionLimit: number;
+};
+
+export async function listClientPolicyTemplates(): Promise<ClientPolicyTemplate[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  return db.select().from(clientPolicyTemplates).orderBy(desc(clientPolicyTemplates.updatedAt));
+}
+
+export async function createClientPolicyTemplate(input: ClientPolicyTemplateInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.insert(clientPolicyTemplates).values({ ...input, name: input.name.trim() });
+  const created = await db.select().from(clientPolicyTemplates).where(eq(clientPolicyTemplates.id, Number(result[0].insertId))).limit(1);
+  if (!created[0]) throw new Error("Failed to create client policy template");
+  return created[0];
+}
+
+export async function updateClientPolicyTemplate(id: number, input: ClientPolicyTemplateInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(clientPolicyTemplates).set({ ...input, name: input.name.trim() }).where(eq(clientPolicyTemplates.id, id));
+  const updated = await db.select().from(clientPolicyTemplates).where(eq(clientPolicyTemplates.id, id)).limit(1);
+  if (!updated[0]) throw new Error("Client policy template was not found");
+  return updated[0];
+}
+
+export async function deleteClientPolicyTemplate(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.delete(clientPolicyTemplates).where(eq(clientPolicyTemplates.id, id));
+}
+
+export type GatewayRecoverySnapshot = {
+  schemaVersion: 1;
+  exportedAt: string;
+  profile: Pick<VlessProfile, "uuid" | "serverAddress" | "port" | "wsPath" | "tlsEnabled" | "subscriptionToken" | "vmessUuid" | "vmessWsPath" | "trojanPassword" | "trojanWsPath" | "socksUsername" | "socksPassword" | "socksWsPath" | "globalProfileEnabled">;
+  templates: Array<Pick<ClientPolicyTemplate, "name" | "trafficLimitBytes" | "dayLimit" | "speedLimitMbps" | "connectionLimit">>;
+  clients: Array<Pick<GatewayClient, "name" | "enabled" | "vlessUuid" | "vmessUuid" | "trojanPassword" | "socksUsername" | "socksPassword" | "subscriptionToken" | "connectionToken" | "trafficLimitBytes" | "trafficUsedBytes" | "dayLimit" | "speedLimitMbps" | "connectionLimit" | "expiresAt" | "quotaExhaustedAt">>;
+};
+
+export async function exportGatewayRecoverySnapshot(): Promise<GatewayRecoverySnapshot> {
+  const profile = await getVlessProfile();
+  if (!profile) throw new Error("Gateway profile was not found");
+  const [clients, templates] = await Promise.all([listGatewayClients(), listClientPolicyTemplates()]);
+  return {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    profile: {
+      uuid: profile.uuid,
+      serverAddress: profile.serverAddress,
+      port: profile.port,
+      wsPath: profile.wsPath,
+      tlsEnabled: profile.tlsEnabled,
+      subscriptionToken: profile.subscriptionToken,
+      vmessUuid: profile.vmessUuid,
+      vmessWsPath: profile.vmessWsPath,
+      trojanPassword: profile.trojanPassword,
+      trojanWsPath: profile.trojanWsPath,
+      socksUsername: profile.socksUsername,
+      socksPassword: profile.socksPassword,
+      socksWsPath: profile.socksWsPath,
+      globalProfileEnabled: profile.globalProfileEnabled,
+    },
+    templates: templates.map(template => ({
+      name: template.name,
+      trafficLimitBytes: Number(template.trafficLimitBytes),
+      dayLimit: template.dayLimit,
+      speedLimitMbps: template.speedLimitMbps,
+      connectionLimit: template.connectionLimit,
+    })),
+    clients: clients.map(client => ({
+      name: client.name,
+      enabled: client.enabled,
+      vlessUuid: client.vlessUuid,
+      vmessUuid: client.vmessUuid,
+      trojanPassword: client.trojanPassword,
+      socksUsername: client.socksUsername,
+      socksPassword: client.socksPassword,
+      subscriptionToken: client.subscriptionToken,
+      connectionToken: client.connectionToken,
+      trafficLimitBytes: Number(client.trafficLimitBytes),
+      trafficUsedBytes: Number(client.trafficUsedBytes),
+      dayLimit: client.dayLimit,
+      speedLimitMbps: client.speedLimitMbps,
+      connectionLimit: client.connectionLimit,
+      expiresAt: client.expiresAt,
+      quotaExhaustedAt: client.quotaExhaustedAt,
+    })),
+  };
+}
+
+export async function replaceGatewayRecoverySnapshot(snapshot: GatewayRecoverySnapshot) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.transaction(async tx => {
+    await tx.delete(subscriptionEvents);
+    await tx.delete(gatewayClients);
+    await tx.delete(clientPolicyTemplates);
+    await tx.delete(vlessProfiles).where(eq(vlessProfiles.id, 1));
+    await tx.insert(vlessProfiles).values({ id: 1, ...snapshot.profile });
+    if (snapshot.templates.length) await tx.insert(clientPolicyTemplates).values(snapshot.templates);
+    if (snapshot.clients.length) {
+      await tx.insert(gatewayClients).values(snapshot.clients.map(client => ({
+        ...client,
+        trafficStatsSnapshotBytes: 0,
+        creationRequestId: null,
+        activationDueAt: null,
+        activationFailedAt: null,
+        lastSubscriptionAt: null,
+        subscriptionDeliveryCount: 0,
+      })));
+    }
+  });
+  const restored = await getVlessProfile();
+  if (!restored) throw new Error("Gateway recovery restore did not produce a profile");
+  return restored;
 }
 
 export async function getGatewayClientById(id: number) {

@@ -7,6 +7,8 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Admin from "./pages/Admin";
 import Clients from "./pages/Clients";
 import Devices from "./pages/Devices";
+import Recovery from "./pages/Recovery";
+import Templates from "./pages/Templates";
 import Home from "./pages/Home";
 
 function Router() {
@@ -16,6 +18,8 @@ function Router() {
       <Route path="/admin" component={Admin} />
       <Route path="/admin/clients" component={Clients} />
       <Route path="/admin/devices" component={Devices} />
+      <Route path="/admin/templates" component={Templates} />
+      <Route path="/admin/recovery" component={Recovery} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

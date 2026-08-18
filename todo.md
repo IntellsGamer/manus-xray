@@ -147,3 +147,8 @@
 - [x] Use the available client policy-panel width effectively without reintroducing control overlap, and add validated VLESS-over-XHTTP support alongside WebSocket transport.
 - [x] Add VLESS/XHTTP to every named client alongside WebSocket, with each opaque client route subject to the same byte accounting, speed, connection, expiry, quota-disable, and forced-close controls.
 - [x] Make named-client VLESS/XHTTP URI labels match the global `Nginx Gateway · VLESS XHTTP` label.
+- [x] Add persistent reusable client policy templates and a dedicated Templates management page.
+- [x] Add a Devices-page action that only autofills the new-client form with selected device details and never creates a client automatically.
+- [x] Add an owner-only Recovery page that exports and validates/imports supported gateway configuration data safely.
+- [x] Assess a constrained, owner-only diagnostics-console alternative; do not expose unrestricted backend shell access through the web panel.
+- [x] Visually verify the Templates page, Recovery export/file-import UI, Devices autofill action, and Clients template selector in the shared admin shell.
