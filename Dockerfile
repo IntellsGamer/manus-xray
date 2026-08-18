@@ -10,7 +10,11 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY . .
-RUN npm install -g corepack@latest && corepack pnpm install && corepack pnpm run build
+RUN npm install -g corepack@latest \
+    && corepack pnpm install \
+    && corepack pnpm rebuild node-pty \
+    && node -e "require('node-pty')" \
+    && corepack pnpm run build
 
 RUN groupadd --system app && useradd --system --gid app --create-home --home-dir /home/app app \
     && chown -R app:app /app

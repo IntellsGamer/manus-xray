@@ -9,3 +9,5 @@
 - [x] Verify TypeScript, tests, development preview, desktop/mobile layout, and save a published checkpoint.
 - [x] Preserve the current Autoscale hosting mode and make the terminal safely reconnectable when a request-scoped session is closed.
 - [x] Add isolated tests for terminal lease exclusivity, authorization decisions, and cleanup behavior.
+- [x] Repair the production image so node-pty’s native binding is built and loadable at application startup.
+- [ ] Validate the repaired deployment build and save a corrected published checkpoint.
