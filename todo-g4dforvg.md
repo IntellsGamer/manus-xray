@@ -6,6 +6,6 @@
 - [x] Spawn an isolated non-login shell with PTY semantics, terminal resize support, bounded I/O, and automatic cleanup.
 - [x] Build the responsive xterm-style client terminal with Shift+Ctrl+V / Shift+Ctrl+C extra controls, clipboard safety, reconnect, resize, and terminate actions.
 - [x] Add Vitest coverage for owner authorization and terminal session safeguards.
-- [ ] Verify TypeScript, tests, development preview, desktop/mobile layout, and save a published checkpoint.
+- [x] Verify TypeScript, tests, development preview, desktop/mobile layout, and save a published checkpoint.
 - [x] Preserve the current Autoscale hosting mode and make the terminal safely reconnectable when a request-scoped session is closed.
 - [x] Add isolated tests for terminal lease exclusivity, authorization decisions, and cleanup behavior.
