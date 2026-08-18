@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { ClientPolicyTemplate, clientPolicyTemplates, GatewayClient, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
+import { ClientPolicyTemplate, clientPolicyTemplates, GatewayClient, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, terminalLeases, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import type { OwnerDeviceObservation } from "./ownerDevices";
 import { ENV } from './_core/env';
 import { createGatewayCredential, createSubscriptionToken, createVlessUuid, normaliseGatewayPaths, normaliseWsPath } from "./vless";
@@ -130,6 +130,42 @@ export async function revokeAllOwnerDevices(ownerOpenId: string) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   await db.update(ownerDevices).set({ revokedAt: new Date() }).where(and(eq(ownerDevices.ownerOpenId, ownerOpenId), isNull(ownerDevices.revokedAt)));
+}
+
+export async function acquireTerminalLease(input: {
+  leaseId: string;
+  ownerOpenId: string;
+  instanceId: string;
+  expiresAt: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+
+  await db.execute(sql`
+    INSERT INTO terminal_leases (slot, leaseId, ownerOpenId, instanceId, expiresAt)
+    VALUES ('owner-terminal', ${input.leaseId}, ${input.ownerOpenId}, ${input.instanceId}, ${input.expiresAt})
+    ON DUPLICATE KEY UPDATE
+      leaseId = IF(expiresAt < NOW(), VALUES(leaseId), leaseId),
+      ownerOpenId = IF(expiresAt < NOW(), VALUES(ownerOpenId), ownerOpenId),
+      instanceId = IF(expiresAt < NOW(), VALUES(instanceId), instanceId),
+      expiresAt = IF(expiresAt < NOW(), VALUES(expiresAt), expiresAt)
+  `);
+
+  const lease = await db.select({ leaseId: terminalLeases.leaseId })
+    .from(terminalLeases)
+    .where(eq(terminalLeases.slot, "owner-terminal"))
+    .limit(1);
+  return lease[0]?.leaseId === input.leaseId;
+}
+
+export async function releaseTerminalLease(leaseId: string, instanceId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(terminalLeases).where(and(
+    eq(terminalLeases.slot, "owner-terminal"),
+    eq(terminalLeases.leaseId, leaseId),
+    eq(terminalLeases.instanceId, instanceId),
+  ));
 }
 
 export async function getVlessProfile() {

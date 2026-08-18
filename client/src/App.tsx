@@ -10,6 +10,7 @@ import Devices from "./pages/Devices";
 import Recovery from "./pages/Recovery";
 import Templates from "./pages/Templates";
 import Home from "./pages/Home";
+import Terminal from "./pages/Terminal";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <Route path="/admin/devices" component={Devices} />
       <Route path="/admin/templates" component={Templates} />
       <Route path="/admin/recovery" component={Recovery} />
+      <Route path="/admin/terminal" component={Terminal} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

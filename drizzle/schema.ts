@@ -136,3 +136,14 @@ export const ownerDevices = mysqlTable("owner_devices", {
 ]);
 
 export type OwnerDevice = typeof ownerDevices.$inferSelect;
+
+/** A short-lived, database-backed owner terminal lease shared by all application instances. */
+export const terminalLeases = mysqlTable("terminal_leases", {
+  slot: varchar("slot", { length: 32 }).primaryKey(),
+  leaseId: varchar("leaseId", { length: 64 }).notNull(),
+  ownerOpenId: varchar("ownerOpenId", { length: 64 }).notNull(),
+  instanceId: varchar("instanceId", { length: 64 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+});
+
+export type TerminalLease = typeof terminalLeases.$inferSelect;

@@ -4,6 +4,7 @@ export const adminRoutes = {
   devices: "/admin/devices",
   templates: "/admin/templates",
   recovery: "/admin/recovery",
+  terminal: "/admin/terminal",
 } as const;
 
 export type AdminRouteId = keyof typeof adminRoutes;

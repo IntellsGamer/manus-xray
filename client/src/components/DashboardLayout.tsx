@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -22,19 +23,22 @@ import {
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { adminRoutes } from "@/lib/adminNavigation";
-import { ArchiveRestore, Laptop, LayoutDashboard, LayoutTemplate, LogOut, PanelLeft, Users } from "lucide-react";
+import { ArchiveRestore, Laptop, LayoutDashboard, LayoutTemplate, LogOut, PanelLeft, TerminalSquare, Users, type LucideIcon } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const menuItems = [
+type SidebarMenuItem = { icon: LucideIcon; label: string; path: string };
+
+const menuItems: SidebarMenuItem[] = [
   { icon: LayoutDashboard, label: "Connection control", path: adminRoutes.overview },
   { icon: Users, label: "Clients & routes", path: adminRoutes.clients },
   { icon: Laptop, label: "Devices", path: adminRoutes.devices },
   { icon: LayoutTemplate, label: "Templates", path: adminRoutes.templates },
   { icon: ArchiveRestore, label: "Recovery", path: adminRoutes.recovery },
 ];
+const terminalMenuItem: SidebarMenuItem = { icon: TerminalSquare, label: "Terminal", path: adminRoutes.terminal };
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -51,6 +55,12 @@ export default function DashboardLayout({
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { loading, user, logout } = useAuth();
+  const terminalAccess = trpc.terminal.authorize.useQuery(undefined, {
+    enabled: Boolean(user && user.role === "admin"),
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -103,7 +113,12 @@ export default function DashboardLayout({
         } as CSSProperties
       }
     >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth} user={user} logout={logout}>
+      <DashboardLayoutContent
+        setSidebarWidth={setSidebarWidth}
+        user={user}
+        logout={logout}
+        menuItems={terminalAccess.data?.permitted ? [...menuItems, terminalMenuItem] : menuItems}
+      >
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
@@ -115,6 +130,7 @@ type DashboardLayoutContentProps = {
   setSidebarWidth: (width: number) => void;
   user: NonNullable<ReturnType<typeof useAuth>["user"]>;
   logout: ReturnType<typeof useAuth>["logout"];
+  menuItems: SidebarMenuItem[];
 };
 
 function DashboardLayoutContent({
@@ -122,6 +138,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
   user,
   logout,
+  menuItems,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();

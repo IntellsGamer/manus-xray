@@ -260,6 +260,8 @@ export function registerVlessUpgradeProxy(server: Server, overrides: UpgradeDepe
   };
 
   server.on("upgrade", (req, socket, head) => {
+    const pathname = new URL(req.url || "/", "http://local-gateway").pathname;
+    if (pathname === "/api/terminal/socket") return;
     bridgeUpgrade(req, socket, head, dependencies).catch(() => socket.destroy());
   });
 }
