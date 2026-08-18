@@ -10,4 +10,5 @@
 - [x] Preserve the current Autoscale hosting mode and make the terminal safely reconnectable when a request-scoped session is closed.
 - [x] Add isolated tests for terminal lease exclusivity, authorization decisions, and cleanup behavior.
 - [x] Repair the production image so node-pty’s native binding is built and loadable at application startup.
-- [ ] Validate the repaired deployment build and save a corrected published checkpoint.
+- [x] Validate the repaired deployment build and save a corrected published checkpoint.
+- [ ] Verify the corrected published revision completes its live container startup check without a node-pty loading error.
