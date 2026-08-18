@@ -3,7 +3,7 @@ import { createConnection, createServer as createTcpServer } from "net";
 import { AddressInfo } from "net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VlessProfile } from "../drizzle/schema";
-import { ClientSpeedLimiter, createTunnelUsageFlusher, registerVlessUpgradeProxy, speedLimitBytesPerSecond } from "./vlessUpgradeProxy";
+import { ClientSpeedLimiter, createTunnelUsageFlusher, gatewaySourceIdentity, registerVlessUpgradeProxy, speedLimitBytesPerSecond } from "./vlessUpgradeProxy";
 import { activeGatewaySourceCountForClient, activeGatewayTunnelCount, activeGatewayTunnelCountForClient, closeActiveGatewayTunnels } from "./gatewayTunnels";
 
 const profile: VlessProfile = {
@@ -143,6 +143,15 @@ function receiveUpgradePayload(port: number, path: string, expectedPayloadBytes:
 }
 
 describe("VLESS WebSocket upgrade bridge", () => {
+  it("normalizes Cloudflare IPv6 source addresses to a /64 while preserving exact IPv4 identities", () => {
+    const request = (source: string) => ({ headers: { "cf-connecting-ip": source }, socket: { remoteAddress: "127.0.0.1" } }) as unknown as import("http").IncomingMessage;
+
+    expect(gatewaySourceIdentity(request("2001:db8:1234:5678:aaaa:bbbb:cccc:dddd"))).toBe("2001:db8:1234:5678::/64");
+    expect(gatewaySourceIdentity(request("2001:db8:1234:5678:1111:2222:3333:4444"))).toBe("2001:db8:1234:5678::/64");
+    expect(gatewaySourceIdentity(request("2001:db8:1234:5679::1"))).toBe("2001:db8:1234:5679::/64");
+    expect(gatewaySourceIdentity(request("198.51.100.20"))).toBe("198.51.100.20");
+  });
+
   it("shares one finite Mbps budget across upload and download reservations", () => {
     const limiter = new ClientSpeedLimiter(1_000);
 
@@ -260,11 +269,12 @@ describe("VLESS WebSocket upgrade bridge", () => {
     });
     const bridgePort = await listen(bridge);
 
-    const sharedSource = { "cf-connecting-ip": "198.51.100.10" };
-    const secondSource = { "cf-connecting-ip": "198.51.100.11" };
+    const sharedSource = { "cf-connecting-ip": "2001:db8:1234:5678::10" };
+    const sameIpv6Network = { "cf-connecting-ip": "2001:db8:1234:5678:ffff:eeee:dddd:cccc" };
+    const secondSource = { "cf-connecting-ip": "2001:db8:1234:5679::11" };
     const first = await upgradeWithBufferedPayload(bridgePort, "/vless/shared-connection-cap-route", "", true, sharedSource);
     expect(activeGatewayTunnelCountForClient(namedClient.id)).toBe(1);
-    const sameSource = await upgradeWithBufferedPayload(bridgePort, "/vmess/shared-connection-cap-route", "", true, sharedSource);
+    const sameSource = await upgradeWithBufferedPayload(bridgePort, "/vmess/shared-connection-cap-route", "", true, sameIpv6Network);
     expect(activeGatewayTunnelCountForClient(namedClient.id)).toBe(2);
     expect(activeGatewaySourceCountForClient(namedClient.id)).toBe(1);
     const rejected = await upgrade(bridgePort, "/vmess/shared-connection-cap-route", secondSource);

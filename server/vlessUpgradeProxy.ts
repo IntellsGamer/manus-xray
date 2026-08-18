@@ -79,12 +79,31 @@ function headerValue(req: IncomingMessage, name: string) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function ipv6Network64(address: string) {
+  const parts = address.toLowerCase().split("::");
+  if (parts.length > 2) return undefined;
+  const left = parts[0] ? parts[0].split(":") : [];
+  const right = parts[1] ? parts[1].split(":") : [];
+  const missing = 8 - left.length - right.length;
+  if (missing < 0) return undefined;
+  const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
+  if (groups.length !== 8 || groups.some(group => !/^[0-9a-f]{1,4}$/i.test(group))) return undefined;
+  return `${groups.slice(0, 4).map(group => Number.parseInt(group, 16).toString(16)).join(":")}::/64`;
+}
+
+export function normalizeGatewaySourceAddress(address: string) {
+  const mappedOrDirect = address.toLowerCase().startsWith("::ffff:") ? address.slice(7) : address;
+  const version = isIP(mappedOrDirect);
+  if (version === 4) return mappedOrDirect;
+  if (version === 6) return ipv6Network64(mappedOrDirect) ?? "unknown";
+  return "unknown";
+}
+
 /** Cloudflare supplies the direct client address here; local/direct traffic safely falls back to the peer address. */
 export function gatewaySourceIdentity(req: IncomingMessage) {
   const cloudflareAddress = headerValue(req, "cf-connecting-ip")?.trim();
   const candidate = cloudflareAddress && isIP(cloudflareAddress) ? cloudflareAddress : req.socket.remoteAddress || "unknown";
-  const ipv4Mapped = candidate.startsWith("::ffff:") ? candidate.slice(7) : candidate;
-  return isIP(ipv4Mapped) ? ipv4Mapped.toLowerCase() : "unknown";
+  return normalizeGatewaySourceAddress(candidate);
 }
 
 export function createTunnelUsageFlusher(input: {

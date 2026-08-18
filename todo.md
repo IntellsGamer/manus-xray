@@ -127,3 +127,4 @@
 - [x] Enforce each finite connection cap across concurrent VLESS, VMess, Trojan, and SOCKS5 gateway tunnels without disrupting other clients.
 - [x] Add unified connection-limit controls, summaries, subscription status, lifecycle behavior, and deterministic regression coverage matching the existing speed-limit feature.
 - [x] Replace raw per-client WebSocket tunnel counting with Cloudflare-aware unique source-IP counting so multiplexed sockets from one device use one connection slot while distinct source IPs consume separate slots.
+- [x] Normalize IPv6 source identities to their /64 network for finite per-client connection limits while retaining exact IPv4 identities and Cloudflare header extraction.
