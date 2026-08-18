@@ -6,9 +6,7 @@ import type { Duplex } from "stream";
 import * as pty from "node-pty";
 import { WebSocketServer, type WebSocket } from "ws";
 import { acquireTerminalLease, releaseTerminalLease } from "./db";
-import { ENV } from "./_core/env";
 import { sdk, type AuthenticatedUser } from "./_core/sdk";
-import { isOwnerDeviceToken } from "./ownerDevices";
 
 export const TERMINAL_SOCKET_PATH = "/api/terminal/socket";
 
@@ -99,17 +97,10 @@ export class TerminalOutputLimiter {
   }
 }
 
-export function isTerminalOwner(
-  user: Pick<AuthenticatedUser, "openId" | "role" | "deviceToken"> | null | undefined,
-  ownerOpenId = ENV.ownerOpenId,
+export function isTerminalAdministrator(
+  user: Pick<AuthenticatedUser, "role"> | null | undefined,
 ) {
-  return Boolean(
-    user &&
-      ownerOpenId &&
-      user.role === "admin" &&
-      user.openId === ownerOpenId &&
-      isOwnerDeviceToken(user.deviceToken),
-  );
+  return user?.role === "admin";
 }
 
 function headerValue(req: IncomingMessage, name: string) {
@@ -260,6 +251,7 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
   });
 
   socket.on("message", raw => {
+    if (closed) return;
     const frame = parseTerminalFrame(raw);
     if (!frame) {
       shutdown(1008, "Malformed terminal frame");
@@ -273,13 +265,21 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
         shutdown(1008, "Terminal input limit exceeded");
         return;
       }
-      ptyProcess.write(frame.data);
+      try {
+        ptyProcess.write(frame.data);
+      } catch {
+        shutdown(1011, "Terminal process is no longer available");
+      }
       return;
     }
     if (frame.type === "resize") {
       const cols = Math.max(2, Math.min(MAX_COLS, Math.floor(frame.cols)));
       const rows = Math.max(1, Math.min(MAX_ROWS, Math.floor(frame.rows)));
-      ptyProcess.resize(cols, rows);
+      try {
+        ptyProcess.resize(cols, rows);
+      } catch {
+        shutdown(1000, "Terminal process exited before resize completed");
+      }
     }
   });
   socket.once("close", () => shutdown());
@@ -302,7 +302,7 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
     return;
   }
 
-  if (!isTerminalOwner(user)) {
+  if (!isTerminalAdministrator(user)) {
     rejectUpgrade(socket, 403, "Forbidden");
     return;
   }
@@ -329,7 +329,7 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
 
   terminalWss.handleUpgrade(req, socket, head, websocket => {
     terminalSockets.add(websocket);
-    console.info(`[Terminal] Session opened for owner from ${trustedClientIp(req)}.`);
+    console.info(`[Terminal] Session opened for administrator from ${trustedClientIp(req)}.`);
     startTerminal(websocket, lease.release);
   });
 }

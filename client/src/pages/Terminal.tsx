@@ -26,6 +26,11 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
   const terminalRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const outputQueueRef = useRef<string[]>([]);
+  const outputQueuedCharsRef = useRef(0);
+  const outputFlushPendingRef = useRef(false);
+  const renderingOutputRef = useRef(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
@@ -67,10 +72,44 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
     if (!terminal || !fitAddon) return;
     try {
       fitAddon.fit();
-      sendFrame({ type: "resize", cols: terminal.cols, rows: terminal.rows });
+      const size = { cols: terminal.cols, rows: terminal.rows };
+      if (lastSizeRef.current?.cols !== size.cols || lastSizeRef.current?.rows !== size.rows) {
+        lastSizeRef.current = size;
+        sendFrame({ type: "resize", ...size });
+      }
     } catch {
       // The host can report zero dimensions during an animated layout transition.
     }
+  };
+
+  const enqueueOutput = (data: string) => {
+    if (data) {
+      if (outputQueuedCharsRef.current + data.length > 256 * 1024) {
+        outputQueueRef.current = [];
+        outputQueuedCharsRef.current = 0;
+        socketRef.current?.close(1008, "Terminal output rendered too quickly");
+        return;
+      }
+      outputQueueRef.current.push(data);
+      outputQueuedCharsRef.current += data.length;
+    }
+    if (outputFlushPendingRef.current) return;
+    outputFlushPendingRef.current = true;
+
+    requestAnimationFrame(() => {
+      const terminal = terminalRef.current;
+      const output = outputQueueRef.current.join("");
+      outputQueueRef.current = [];
+      outputQueuedCharsRef.current = 0;
+      outputFlushPendingRef.current = false;
+      if (!terminal || !output) return;
+
+      renderingOutputRef.current = true;
+      terminal.write(output, () => {
+        renderingOutputRef.current = false;
+        if (outputQueueRef.current.length > 0) enqueueOutput("");
+      });
+    });
   };
 
   useEffect(() => {
@@ -79,12 +118,12 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
 
     const terminal = new XtermTerminal({
       cursorBlink: true,
-      convertEol: true,
+      convertEol: false,
       fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
       fontSize: 13,
       fontWeight: 500,
       lineHeight: 1.25,
-      scrollback: 15_000,
+      scrollback: 6_000,
       theme: {
         background: "#071014",
         foreground: "#d9f6ea",
@@ -115,11 +154,21 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    const resizeObserver = new ResizeObserver(() => fitTerminal());
+    let resizeFrame: number | undefined;
+    const scheduleFit = () => {
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = undefined;
+        fitTerminal();
+      });
+    };
+    const resizeObserver = new ResizeObserver(scheduleFit);
     resizeObserver.observe(host);
-    requestAnimationFrame(() => fitTerminal());
+    scheduleFit();
 
-    const disposeData = terminal.onData(data => sendFrame({ type: "input", data }));
+    const disposeData = terminal.onData(data => {
+      if (!renderingOutputRef.current) sendFrame({ type: "input", data });
+    });
     terminal.attachCustomKeyEventHandler(event => {
       if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) return true;
       if (event.code === "KeyC") {
@@ -137,7 +186,10 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
 
     return () => {
       resizeObserver.disconnect();
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       disposeData.dispose();
+      outputQueueRef.current = [];
+      outputQueuedCharsRef.current = 0;
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -172,7 +224,7 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
         return;
       }
       if (message.type === "output") {
-        terminal.write(message.data);
+        enqueueOutput(message.data);
         return;
       }
       if (message.type === "error") {
@@ -223,7 +275,7 @@ function TerminalWorkspace({ socketPath }: { socketPath: string }) {
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold tracking-tight text-slate-100 sm:text-lg">Backend terminal</h1>
-            <p className="truncate text-xs text-slate-400">Interactive PTY · owner device only · isolated process environment</p>
+            <p className="truncate text-xs text-slate-400">Interactive PTY · authenticated administrators · isolated process environment</p>
           </div>
         </div>
         <div className={`flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${status.classes}`}>
@@ -294,7 +346,7 @@ export default function TerminalPage() {
   if (authorization.isError) {
     return (
       <DashboardLayout>
-        <TerminalAccessPanel title="Terminal access check unavailable" description="The owner-only terminal gate could not be verified. No terminal session has been created." />
+        <TerminalAccessPanel title="Terminal access check unavailable" description="The administrator access check could not be verified. No terminal session has been created." />
       </DashboardLayout>
     );
   }
@@ -302,7 +354,7 @@ export default function TerminalPage() {
   if (!authorization.data?.permitted) {
     return (
       <DashboardLayout>
-        <TerminalAccessPanel title="Owner device verification required" description="This terminal requires the configured owner account and an active, verified owner-device session. No terminal client is loaded for this session." />
+        <TerminalAccessPanel title="Administrator access required" description="This terminal is available only to authenticated administrators. No terminal client is loaded for this session." />
       </DashboardLayout>
     );
   }

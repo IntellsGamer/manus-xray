@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "http";
-import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalOriginAllowed, isTerminalOwner, parseTerminalFrame, TerminalInputLimiter, TerminalOutputLimiter } from "./terminal";
+import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalAdministrator, isTerminalOriginAllowed, parseTerminalFrame, TerminalInputLimiter, TerminalOutputLimiter } from "./terminal";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -33,11 +33,10 @@ function adminContext(openId: string): TrpcContext {
 }
 
 describe("terminal authorization boundary", () => {
-  it("requires the exact owner, the admin role, and a verified owner-device token", () => {
-    expect(isTerminalOwner({ openId: "owner-1", role: "admin", deviceToken: verifiedDeviceToken }, "owner-1")).toBe(true);
-    expect(isTerminalOwner({ openId: "other-admin", role: "admin", deviceToken: verifiedDeviceToken }, "owner-1")).toBe(false);
-    expect(isTerminalOwner({ openId: "owner-1", role: "user", deviceToken: verifiedDeviceToken }, "owner-1")).toBe(false);
-    expect(isTerminalOwner({ openId: "owner-1", role: "admin" }, "owner-1")).toBe(false);
+  it("requires an authenticated administrator role", () => {
+    expect(isTerminalAdministrator({ role: "admin" })).toBe(true);
+    expect(isTerminalAdministrator({ role: "user" })).toBe(false);
+    expect(isTerminalAdministrator(null)).toBe(false);
   });
 
   it("accepts a same-origin HTTPS upgrade and rejects a mismatched origin", () => {
@@ -53,10 +52,10 @@ describe("terminal authorization boundary", () => {
     }))).toBe(false);
   });
 
-  it("keeps the terminal router unavailable to a non-owner admin", async () => {
+  it("permits the terminal capability query for an authenticated administrator", async () => {
     const caller = appRouter.createCaller(adminContext("not-the-configured-owner"));
     await expect(caller.terminal.authorize()).resolves.toEqual({
-      permitted: false,
+      permitted: true,
       socketPath: "/api/terminal/socket",
     });
   });

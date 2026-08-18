@@ -11,5 +11,8 @@
 - [x] Add isolated tests for terminal lease exclusivity, authorization decisions, and cleanup behavior.
 - [x] Repair the production image so node-pty’s native binding is built and loadable at application startup.
 - [x] Validate the repaired deployment build and save a corrected published checkpoint.
-- [ ] Verify the corrected published revision completes its live container startup check without a node-pty loading error.
+- [x] Verify the corrected published revision completes its live container startup check without a node-pty loading error.
 - [x] Compile node-pty directly in the Docker image rather than relying on the package manager’s blocked lifecycle script.
+- [x] Show the Terminal route and sidebar entry to every authenticated administrator without owner-device gating.
+- [x] Prevent terminal input/output feedback loops and repeated line rendering that can lag the browser.
+- [ ] Verify the administrator terminal route and publish the corrected behavior.
