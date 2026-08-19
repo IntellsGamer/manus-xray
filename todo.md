@@ -181,6 +181,6 @@
 - [x] Closed at the owner’s request before final live end-to-end confirmation: diagnose and repair the reported named-client VLESS/XHTTP stream-up connection failure.
 - [x] Remove Xray apply/reload calls from per-request WebSocket and XHTTP tunnel handling; retain reloads only for actual configuration changes and policy enforcement.
 - [x] Flush XHTTP upstream request and downstream response headers before piping bodies so HTTP/2 stream-up traffic is not buffered by the gateway.
-- [ ] Retest the reported VLESS/XHTTP stream-up URI and, if needed, migrate global and named-client XHTTP imports to the lowest-latency compatible mode.
-- [ ] Correct public-to-private packet-up XHTTP request normalization so the private Xray inbound no longer rejects uploads with HTTP 400.
-- [ ] Validate the XHTTP correction on the preview before publishing; do not probe the production domain again until the new version is live.
+- [x] Retest the reported VLESS/XHTTP stream-up URI and migrate global and named-client XHTTP imports to packet-up, the compatible HTTP/2/CDN mode for this gateway.
+- [x] Correct public-to-private packet-up XHTTP request normalization so the private Xray inbound no longer rejects uploads with HTTP 400.
+- [x] Preview note: the managed preview has no local Xray runtime and returned 502, so validate packet-up in an isolated local Xray pair; publish before the successful production-domain transfer test.
