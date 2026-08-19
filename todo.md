@@ -184,4 +184,5 @@
 - [x] Retest the reported VLESS/XHTTP stream-up URI and migrate global and named-client XHTTP imports to packet-up, the compatible HTTP/2/CDN mode for this gateway.
 - [x] Correct public-to-private packet-up XHTTP request normalization so the private Xray inbound no longer rejects uploads with HTTP 400.
 - [x] Preview note: the managed preview has no local Xray runtime and returned 502, so validate packet-up in an isolated local Xray pair; publish before the successful production-domain transfer test.
-- [ ] Attempt a stream-up XHTTP bridge repair and publish stream-up only if the exact named-client import completes an end-to-end Xray transfer.
+- [x] Attempt a stream-up XHTTP bridge repair: the exact published named-client import timed out with zero response bytes, so stream-up will not be published as the default transport.
+- [x] Restore the XHTTP inbound from temporary auto mode to packet-up-only after the unsuccessful stream-up probe.
