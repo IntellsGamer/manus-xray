@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXhttpUri, buildXrayConfig, clientWebSocketPaths, normaliseGatewayPaths, normaliseWsPath, resolvePublicGatewayRoute } from "./vless";
+import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSocksClientConfig, buildSubscriptionPayload, buildTrojanUri, buildVlessUri, buildVmessUri, buildXhttpUri, buildXrayConfig, clientSocksInboundPort, clientWebSocketPaths, normaliseGatewayPaths, normaliseWsPath, resolvePublicGatewayRoute } from "./vless";
 
 const profile: VlessProfile = {
   id: 1,
@@ -121,7 +121,7 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[3]?.settings.accounts).toEqual([]);
     expect(config.inbounds[4]?.settings.clients).toEqual([{ id: namedClient.vlessUuid, email: `gateway-client-${namedClient.id}-vless@local.invalid`, level: 0 }]);
     expect(config.inbounds[5]).toMatchObject({ protocol: "shadowsocks", settings: { users: [{ password: namedClient.shadowsocksUserKey, email: `gateway-client-${namedClient.id}-shadowsocks@local.invalid`, level: 0 }] } });
-    expect(config.inbounds[6]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 10109, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
+    expect(config.inbounds[6]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 20000, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
     expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
     expect(new URL(clientDetails.vlessUri).searchParams.get("path")).toBe("/vless/named-client-route-token");
     const namedXhttp = new URL(clientDetails.xhttpUri);
@@ -157,5 +157,15 @@ describe("VLESS profile serialization", () => {
     expect(route).toMatchObject({ protocol: "vless", internalPath: "/vless", port: 10000, client: { id: namedClient.id } });
     expect(resolvePublicGatewayRoute(profile, 10000, [namedClient], paths.shadowsocks)).toMatchObject({ protocol: "shadowsocks", internalPath: "/shadowsocks", port: 10005, client: { id: namedClient.id } });
     expect(resolvePublicGatewayRoute(profile, 10000, [namedClient], "/vless/unknown-route")).toBeUndefined();
+  });
+
+  it("allocates a valid bounded SOCKS listener port for a high database client ID", () => {
+    const highIdClient = { ...namedClient, id: 510_001 };
+    const route = resolvePublicGatewayRoute(profile, 10_000, [highIdClient], clientWebSocketPaths(profile, highIdClient).socks);
+    const config = buildXrayConfig(profile, 10_000, [highIdClient]) as { inbounds: Array<{ tag?: string; port?: number }> };
+
+    expect(clientSocksInboundPort(10_000, highIdClient.id, [highIdClient])).toBe(20_000);
+    expect(route).toMatchObject({ port: 20_000, client: highIdClient });
+    expect(config.inbounds).toContainEqual(expect.objectContaining({ tag: `gateway-client-${highIdClient.id}-socks-in`, port: 20_000 }));
   });
 });

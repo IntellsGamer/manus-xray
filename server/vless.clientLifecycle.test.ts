@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   deleteGatewayClient: vi.fn(),
   listGatewayClients: vi.fn(),
   listSubscriptionEventsForClient: vi.fn(),
+  getGatewayClientById: vi.fn(),
   markGatewayClientActivationFailed: vi.fn(),
   regenerateGatewayProtocolCredential: vi.fn(),
   regenerateSubscriptionToken: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("./db", () => ({
   createGatewayClient: mocks.createGatewayClient,
   deleteGatewayClient: mocks.deleteGatewayClient,
   ensureVlessProfile: mocks.ensureVlessProfile,
+  getGatewayClientById: mocks.getGatewayClientById,
   listGatewayClients: mocks.listGatewayClients,
   listSubscriptionEventsForClient: mocks.listSubscriptionEventsForClient,
   markGatewayClientActivationFailed: mocks.markGatewayClientActivationFailed,
@@ -118,6 +120,7 @@ describe("client lifecycle mutations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.ensureVlessProfile.mockResolvedValue(profile);
+    mocks.getGatewayClientById.mockResolvedValue(storedClient);
     mocks.updateGatewayClientPolicy.mockResolvedValue({
       ...storedClient,
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
@@ -147,6 +150,27 @@ describe("client lifecycle mutations", () => {
     });
     expect(result).toMatchObject({ trafficLimitBytes: 10 * 1024 * 1024 * 1024, dayLimit: 30, speedLimitMbps: 25, connectionLimit: 3 });
     expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
+  });
+
+  it("saves a raised policy for a quota-reached client without requiring a usage reset", async () => {
+    const exhausted = { ...storedClient, enabled: false, trafficLimitBytes: 100, trafficUsedBytes: 100, quotaExhaustedAt: new Date() };
+    mocks.updateGatewayClientPolicy.mockResolvedValue({ ...exhausted, trafficLimitBytes: 1_000, quotaExhaustedAt: null });
+    const caller = vlessRouter.createCaller(adminContext());
+
+    await expect(caller.updateClientPolicy({ id: exhausted.id, trafficLimitBytes: 1_000, dayLimit: -1, speedLimitMbps: -1, connectionLimit: -1 })).resolves.toMatchObject({ trafficLimitBytes: 1_000, trafficUsedBytes: 100, quotaExhaustedAt: null });
+
+    expect(mocks.updateGatewayClientPolicy).toHaveBeenCalledWith(exhausted.id, expect.objectContaining({ trafficLimitBytes: 1_000 }));
+    expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
+  });
+
+  it("rejects manual enabling of an exhausted client before writing or refreshing Xray", async () => {
+    mocks.getGatewayClientById.mockResolvedValue({ ...storedClient, enabled: false, trafficLimitBytes: 100, trafficUsedBytes: 100, quotaExhaustedAt: new Date() });
+    const caller = vlessRouter.createCaller(adminContext());
+
+    await expect(caller.setClientEnabled({ id: storedClient.id, enabled: true })).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("data quota is exhausted") });
+
+    expect(mocks.setGatewayClientEnabled).not.toHaveBeenCalled();
+    expect(mocks.applyXrayProfile).not.toHaveBeenCalled();
   });
 
   it("persists a new client once, returns it pending before an Xray reload, and retains retry-safe creation input", async () => {

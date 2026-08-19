@@ -4,6 +4,7 @@ import {
   createGatewayClient,
   deleteGatewayClient,
   ensureVlessProfile,
+  getGatewayClientById,
   listGatewayClients,
   listSubscriptionEventsForClient,
   markGatewayClientActivationFailed,
@@ -18,6 +19,7 @@ import {
   updateGatewayClientPolicy,
   updateVlessProfile,
 } from "../db";
+import { TRPCError } from "@trpc/server";
 import { adminProcedure, router } from "../_core/trpc";
 import { buildClientConnectionDetails, buildGatewayConnectionDetails, normaliseWsPath } from "../vless";
 import { applyXrayProfile, enforceGatewayTrafficQuotas, getXrayRuntimeStatus } from "../xrayRuntime";
@@ -167,6 +169,16 @@ export const vlessRouter = router({
   }),
   setClientEnabled: adminProcedure.input(z.object({ id: z.number().int().positive(), enabled: z.boolean() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
+    if (input.enabled) {
+      const existing = await getGatewayClientById(input.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Gateway client was not found" });
+      if (existing.trafficLimitBytes >= 0 && existing.trafficUsedBytes >= existing.trafficLimitBytes) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Client remains disabled because its data quota is exhausted. Increase the data limit or reset usage before enabling it.",
+        });
+      }
+    }
     const client = await setGatewayClientEnabled(input.id, input.enabled);
     await applyXrayProfile(profile);
     return presentClient(profile, client);

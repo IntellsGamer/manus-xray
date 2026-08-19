@@ -273,8 +273,13 @@ export function clientSocksInboundTag(clientId: number) {
   return `gateway-client-${clientId}-socks-in`;
 }
 
-export function clientSocksInboundPort(internalPort: number, clientId: number) {
-  return internalPort + 100 + clientId;
+export function clientSocksInboundPort(internalPort: number, clientId: number, activeClients: Pick<GatewayClient, "id">[]) {
+  const position = activeClients.findIndex(client => client.id === clientId);
+  if (position < 0) throw new Error("Active client is missing from the SOCKS inbound allocation");
+  const firstClientSocksPort = Math.max(internalPort + 100, 20_000);
+  const port = firstClientSocksPort + position;
+  if (port > 65_535) throw new Error("Too many active client SOCKS inbounds for the available port range");
+  return port;
 }
 
 export function buildSubscriptionPayload(profile: VlessProfile) {
@@ -313,7 +318,7 @@ export function resolvePublicGatewayRoute(profile: VlessProfile, internalBasePor
     for (const mapping of mappings) {
       if (normalizedPath === paths[mapping.protocol]) {
         if (mapping.protocol === "socks") {
-          return { ...mapping, internalPath: paths.socks, port: clientSocksInboundPort(internalBasePort, client.id), client };
+          return { ...mapping, internalPath: paths.socks, port: clientSocksInboundPort(internalBasePort, client.id, activeClients), client };
         }
         return { ...mapping, client };
       }
@@ -431,7 +436,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
       ...activeClients.map(client => ({
         tag: clientSocksInboundTag(client.id),
         listen: "127.0.0.1",
-        port: clientSocksInboundPort(internalPort, client.id),
+        port: clientSocksInboundPort(internalPort, client.id, activeClients),
         protocol: "socks",
         settings: {
           auth: "password",

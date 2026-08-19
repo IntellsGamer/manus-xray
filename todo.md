@@ -196,3 +196,7 @@
 - [x] Diagnose and correct the reported named-client quota undercount during a large download without resetting or modifying existing client usage.
 - [x] Reproduce and correct high-bandwidth stream undercounting, including rapid-buffer flushing and tunnel completion behavior.
 - [x] Eliminate delayed post-download quota commits so high-bandwidth usage is persisted and enforced while the transfer is active.
+- [x] Fix policy editing for quota-reached clients so updated limits save without a 500 error or a required usage reset.
+- [x] Return a clean quota-policy rejection, rather than a 500 error, when enabling a client whose current stored usage still exhausts its limit.
+- [x] Replace invalid high-ID per-client SOCKS port derivation so client policy refreshes remain valid regardless of database identifier size.
+- [x] Superseded duplicate: fix policy editing for quota-reached clients so updated limits save without a 500 error or a required usage reset.
