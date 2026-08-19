@@ -59,8 +59,9 @@ describe("VLESS profile serialization", () => {
     expect(parsed.searchParams.get("path")).toBe("/vless");
     const xhttp = new URL(buildXhttpUri(profile));
     expect(xhttp.searchParams.get("type")).toBe("xhttp");
-    expect(xhttp.searchParams.get("mode")).toBe("packet-up");
+    expect(xhttp.searchParams.get("mode")).toBe("stream-up");
     expect(xhttp.searchParams.get("path")).toBe(`/xhttp/${profile.subscriptionToken}`);
+    expect(JSON.parse(xhttp.searchParams.get("extra") || "{}")).toEqual({ headers: { "User-Agent": "firefox" }, xPaddingBytes: "100-1000", scMaxBufferedPosts: 30, scStreamUpServerSecs: "20-80" });
     const subscriptionLines = Buffer.from(buildSubscriptionPayload(profile), "base64").toString("utf8").split("\n");
     expect(subscriptionLines).toHaveLength(4);
     expect(new URL(subscriptionLines[0] || "").searchParams.get("path")).toBe(`/vless/${profile.subscriptionToken}`);
@@ -82,7 +83,7 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[0]?.streamSettings.wsSettings.path).toBe("/vless");
     expect(config.inbounds).toHaveLength(5);
     expect(config.inbounds.map(inbound => inbound.port)).toEqual([10000, 10001, 10002, 10003, 10004]);
-    expect(config.inbounds[4]).toMatchObject({ port: 10004, streamSettings: { network: "xhttp", xhttpSettings: { path: "/xhttp", mode: "packet-up" } } });
+    expect(config.inbounds[4]).toMatchObject({ port: 10004, streamSettings: { network: "xhttp", xhttpSettings: { path: "/xhttp", mode: "stream-up", headers: { "User-Agent": "firefox" }, xPaddingBytes: "100-1000", scMaxBufferedPosts: 30, scStreamUpServerSecs: "20-80" } } });
   });
 
   it("serializes VMess, Trojan, and SOCKS5 imports with their isolated transport paths", () => {
@@ -112,8 +113,11 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[5]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 10109, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
     expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
     expect(new URL(clientDetails.vlessUri).searchParams.get("path")).toBe("/vless/named-client-route-token");
-    expect(new URL(clientDetails.xhttpUri).searchParams.get("type")).toBe("xhttp");
-    expect(new URL(clientDetails.xhttpUri).searchParams.get("path")).toBe("/xhttp/named-client-route-token");
+    const namedXhttp = new URL(clientDetails.xhttpUri);
+    expect(namedXhttp.searchParams.get("type")).toBe("xhttp");
+    expect(namedXhttp.searchParams.get("mode")).toBe("stream-up");
+    expect(namedXhttp.searchParams.get("path")).toBe("/xhttp/named-client-route-token");
+    expect(JSON.parse(namedXhttp.searchParams.get("extra") || "{}")).toEqual({ headers: { "User-Agent": "firefox" }, xPaddingBytes: "100-1000", scMaxBufferedPosts: 30, scStreamUpServerSecs: "20-80" });
     expect(decodeURIComponent(new URL(clientDetails.xhttpUri).hash.slice(1))).toBe("Nginx Gateway · VLESS XHTTP");
     expect(JSON.parse(Buffer.from(clientDetails.vmessUri.replace("vmess://", ""), "base64").toString("utf8")).path).toBe("/vmess/named-client-route-token");
     expect(new URL(clientDetails.trojanUri).searchParams.get("path")).toBe("/trojan/named-client-route-token");

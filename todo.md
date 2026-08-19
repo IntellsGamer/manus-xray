@@ -176,3 +176,4 @@
 - [x] Visually verify the Templates, Recovery, and Clients & routes pages after the three layout corrections.
 - [x] Replace the compact-card Speed text label with an end-aligned speed icon and policy value below the quota area; render unlimited muted grey and finite Mbps in high-contrast white.
 - [x] Add a muted used-versus-limit data detail beneath the compact finite-quota label while retaining the remaining percentage, quota bar, and speed summary.
+- [x] Switch global and named-client VLESS/XHTTP from packet-up to stream-up, apply the requested XHTTP extras, and retain vless:// subscription serialization.

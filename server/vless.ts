@@ -32,6 +32,13 @@ export function normaliseGatewayPaths(paths: { wsPath: string; vmessWsPath: stri
 
 export type GatewayProtocol = "vless" | "vmess" | "trojan" | "socks";
 
+const xhttpExtraSettings = {
+  headers: { "User-Agent": "firefox" },
+  xPaddingBytes: "100-1000",
+  scMaxBufferedPosts: 30,
+  scStreamUpServerSecs: "20-80",
+} as const;
+
 function routeWithConnectionToken(basePath: string, connectionToken: string) {
   return `${normaliseWsPath(basePath).replace(/\/+$/, "")}/${connectionToken}`;
 }
@@ -84,7 +91,8 @@ function buildXhttpUriForPath(profile: VlessProfile, path: string, label: string
   endpoint.searchParams.set("type", "xhttp");
   endpoint.searchParams.set("host", profile.serverAddress);
   endpoint.searchParams.set("path", path);
-  endpoint.searchParams.set("mode", "packet-up");
+  endpoint.searchParams.set("mode", "stream-up");
+  endpoint.searchParams.set("extra", JSON.stringify(xhttpExtraSettings));
   endpoint.searchParams.set("sni", profile.serverAddress);
   return `${endpoint.toString()}#${encodeURIComponent(label)}`;
 }
@@ -285,7 +293,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
   const xhttpStreamSettings: Record<string, unknown> = {
     network: "xhttp",
     security: "none",
-    xhttpSettings: { path: "/xhttp", mode: "packet-up" },
+    xhttpSettings: { path: "/xhttp", mode: "stream-up", ...xhttpExtraSettings },
   };
 
   const activeClients = clients.filter(client => client.enabled && (!client.expiresAt || client.expiresAt.getTime() > Date.now()));
