@@ -193,3 +193,6 @@
 - [x] Refine compact client-card actions at tablet and mobile widths: use the action-row width cleanly and place the expand/collapse control at the far right.
 - [x] Move detailed client-card actions below the header content at constrained widths and render unlimited compact validity as “Expires never.”
 - [x] Superseded: render unlimited compact validity as “Never expires”; the requested final wording is “Expires never.”
+- [x] Diagnose and correct the reported named-client quota undercount during a large download without resetting or modifying existing client usage.
+- [x] Reproduce and correct high-bandwidth stream undercounting, including rapid-buffer flushing and tunnel completion behavior.
+- [x] Eliminate delayed post-download quota commits so high-bandwidth usage is persisted and enforced while the transfer is active.

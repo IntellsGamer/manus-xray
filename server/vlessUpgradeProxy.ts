@@ -120,24 +120,54 @@ export function createTunnelUsageFlusher(input: {
   recordTraffic: (clientId: number, bytes: number) => Promise<Pick<GatewayClient, "trafficLimitBytes" | "trafficUsedBytes">>;
   enforceQuota: (profile: VlessProfile) => Promise<unknown>;
   flushThresholdBytes?: number;
+  flushIntervalMs?: number;
   initialBytes?: number;
 }) {
   let pendingBytes = input.initialBytes ?? 0;
   let writeChain = Promise.resolve();
+  const flushThresholdBytes = input.flushThresholdBytes ?? 16 * 1024;
+  const flushIntervalMs = input.flushIntervalMs ?? 250;
+  let flushing = false;
+  let forceDrain = false;
+  let scheduledFlush: ReturnType<typeof setTimeout> | undefined;
+  const scheduleFlush = () => {
+    if (scheduledFlush || pendingBytes < flushThresholdBytes) return;
+    scheduledFlush = setTimeout(() => {
+      scheduledFlush = undefined;
+      void flush();
+    }, flushIntervalMs);
+  };
   const flush = (force = false): Promise<void> => {
-    if (pendingBytes === 0 || (!force && pendingBytes < (input.flushThresholdBytes ?? 16 * 1024))) return writeChain;
-    const bytes = pendingBytes;
-    pendingBytes = 0;
+    if (force) forceDrain = true;
+    if (scheduledFlush) {
+      clearTimeout(scheduledFlush);
+      scheduledFlush = undefined;
+    }
+    if (pendingBytes === 0 || (!forceDrain && pendingBytes < flushThresholdBytes)) return writeChain;
+    if (flushing) return writeChain;
+    flushing = true;
     writeChain = writeChain.then(async () => {
-      const updated = await input.recordTraffic(input.clientId, bytes);
-      if (updated.trafficLimitBytes >= 0 && updated.trafficUsedBytes >= updated.trafficLimitBytes) {
-        await input.enforceQuota(input.profile);
+      // Drain one coalesced batch at a time. Bytes received while a database
+      // write is in flight stay in pendingBytes and become the next batch,
+      // rather than creating one serialized write per network chunk.
+      while (pendingBytes > 0 && (forceDrain || pendingBytes >= flushThresholdBytes)) {
+        const bytes = pendingBytes;
+        pendingBytes = 0;
+        const updated = await input.recordTraffic(input.clientId, bytes);
+        if (updated.trafficLimitBytes >= 0 && updated.trafficUsedBytes >= updated.trafficLimitBytes) {
+          await input.enforceQuota(input.profile);
+        }
       }
-    }).catch(() => undefined);
+    }).catch(() => undefined).finally(() => {
+      flushing = false;
+      forceDrain = false;
+      scheduleFlush();
+    });
     return writeChain;
   };
   const observe = (bytes: number) => {
     pendingBytes += Math.max(0, bytes);
+    scheduleFlush();
     return flush();
   };
   return { observe, flush };

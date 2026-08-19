@@ -315,21 +315,41 @@ describe("VLESS WebSocket upgrade bridge", () => {
     await expect(upgrade(bridgePort, "/vmess/shared-connection-cap-route", secondSource)).resolves.toMatchObject({ statusCode: 101 });
   });
 
-  it("persists concurrent bridge deltas in order and enforces the quota when the accumulated total reaches its threshold", async () => {
-    const recordTraffic = vi.fn()
-      .mockResolvedValueOnce({ trafficLimitBytes: 1000, trafficUsedBytes: 200 })
-      .mockResolvedValueOnce({ trafficLimitBytes: 1000, trafficUsedBytes: 500 })
-      .mockResolvedValueOnce({ trafficLimitBytes: 1000, trafficUsedBytes: 1000 });
+  it("coalesces concurrent bridge deltas and enforces the quota when their accumulated total reaches its threshold", async () => {
+    const recordTraffic = vi.fn().mockResolvedValue({ trafficLimitBytes: 1000, trafficUsedBytes: 1000 });
     const enforceQuota = vi.fn().mockResolvedValue(undefined);
     const meter = createTunnelUsageFlusher({ clientId: 9, profile, recordTraffic, enforceQuota, flushThresholdBytes: 1 });
 
     await Promise.all([meter.observe(200), meter.observe(300), meter.observe(500)]);
 
-    expect(recordTraffic).toHaveBeenNthCalledWith(1, 9, 200);
-    expect(recordTraffic).toHaveBeenNthCalledWith(2, 9, 300);
-    expect(recordTraffic).toHaveBeenNthCalledWith(3, 9, 500);
+    expect(recordTraffic).toHaveBeenCalledOnce();
+    expect(recordTraffic).toHaveBeenCalledWith(9, 1000);
     expect(enforceQuota).toHaveBeenCalledOnce();
     expect(enforceQuota).toHaveBeenCalledWith(profile);
+  });
+
+  it("does not create a delayed per-chunk write backlog during a high-bandwidth burst", async () => {
+    let releaseFirstWrite: (() => void) | undefined;
+    const firstWrite = new Promise<void>(resolve => { releaseFirstWrite = resolve; });
+    const recordTraffic = vi.fn()
+      .mockImplementationOnce(async () => {
+        await firstWrite;
+        return { trafficLimitBytes: -1, trafficUsedBytes: 1024 };
+      })
+      .mockResolvedValueOnce({ trafficLimitBytes: -1, trafficUsedBytes: 1024 * 1025 });
+    const meter = createTunnelUsageFlusher({ clientId: 10, profile, recordTraffic, enforceQuota: vi.fn().mockResolvedValue(undefined), flushThresholdBytes: 1, flushIntervalMs: 0 });
+
+    void meter.observe(1024);
+    await vi.waitFor(() => expect(recordTraffic).toHaveBeenCalledOnce());
+    Array.from({ length: 1024 }, () => { void meter.observe(1024); });
+    expect(recordTraffic).toHaveBeenCalledOnce();
+
+    releaseFirstWrite?.();
+    await meter.flush(true);
+
+    expect(recordTraffic).toHaveBeenCalledTimes(2);
+    expect(recordTraffic).toHaveBeenNthCalledWith(1, 10, 1024);
+    expect(recordTraffic).toHaveBeenNthCalledWith(2, 10, 1024 * 1024);
   });
 
   it("forwards the configured path to loopback without reapplying the Xray profile", async () => {
