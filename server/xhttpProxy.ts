@@ -4,7 +4,7 @@ import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
 import { reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
 import { clientXhttpPath, gatewayXhttpPath } from "./vless";
-import { createSpeedLimitTransform, createTunnelUsageFlusher, gatewaySourceIdentity, limiterForGatewayClient } from "./vlessUpgradeProxy";
+import { ClientSpeedLimiter, createSpeedLimitTransform, createTunnelUsageFlusher, gatewaySourceIdentity, limiterForGatewayClient } from "./vlessUpgradeProxy";
 import { enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
 
 export type XhttpRoute = { internalPath: string; client?: GatewayClient };
@@ -49,6 +49,25 @@ export function privateXhttpPath(profile: Awaited<ReturnType<typeof getVlessProf
   return profile ? resolvePublicXhttpRoute(profile, [], originalUrl)?.internalPath : undefined;
 }
 
+/**
+ * Unlimited clients use a direct stream pipe. Keeping the optional branch here
+ * prevents a no-op Transform from being allocated or from participating in
+ * backpressure for an unlimited tunnel.
+ */
+export function pipeXhttpPayload(
+  source: NodeJS.ReadableStream,
+  destination: NodeJS.WritableStream,
+  limiter?: ClientSpeedLimiter,
+) {
+  if (!limiter) {
+    source.pipe(destination);
+    return undefined;
+  }
+  const transform = createSpeedLimitTransform(limiter);
+  source.pipe(transform).pipe(destination);
+  return transform;
+}
+
 function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route: XhttpRoute, releaseReservation?: () => void) {
   const headers = { ...req.headers, host: `127.0.0.1:${xrayInternalPort()}` };
   delete headers.connection;
@@ -61,7 +80,9 @@ function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route:
     recordTraffic: recordGatewayClientTunnelTraffic,
     enforceQuota: enforceGatewayTrafficQuotas,
   }) : undefined;
-  const limiter = route.client ? limiterForGatewayClient(route.client) : undefined;
+  const limiter = route.client && route.client.speedLimitMbps > 0
+    ? limiterForGatewayClient(route.client)
+    : undefined;
   const upstream = requestHttp({ host: "127.0.0.1", port: xrayInternalPort() + 4, method: req.method, path: route.internalPath, headers }, upstreamResponse => {
     res.status(upstreamResponse.statusCode || 502);
     Object.entries(upstreamResponse.headers).forEach(([name, value]) => {
@@ -76,8 +97,7 @@ function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route:
     } else {
       releaseReservation?.();
     }
-    const downstream = createSpeedLimitTransform(limiter);
-    upstreamResponse.pipe(downstream).pipe(res);
+    pipeXhttpPayload(upstreamResponse, res, limiter);
   });
   upstream.flushHeaders();
   upstream.once("error", () => {
@@ -88,8 +108,7 @@ function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route:
   });
   req.on("data", chunk => { void meter?.observe(Buffer.byteLength(chunk)); });
   req.once("close", () => { void meter?.flush(true); });
-  const upstreamLimiter = createSpeedLimitTransform(limiter);
-  req.pipe(upstreamLimiter).pipe(upstream);
+  pipeXhttpPayload(req, upstream, limiter);
 }
 
 export function registerXhttpProxy(app: Express) {

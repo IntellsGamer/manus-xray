@@ -1,6 +1,7 @@
+import { PassThrough } from "stream";
 import { describe, expect, it } from "vitest";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { privateXhttpPath, resolvePublicXhttpRoute, rewritePublicXhttpReferer } from "./xhttpProxy";
+import { pipeXhttpPayload, privateXhttpPath, resolvePublicXhttpRoute, rewritePublicXhttpReferer } from "./xhttpProxy";
 
 const profile = { subscriptionToken: "opaque_global_token", globalProfileEnabled: true } as VlessProfile;
 const namedClient = { id: 17, connectionToken: "opaque_client_token", enabled: true, expiresAt: null } as GatewayClient;
@@ -19,6 +20,23 @@ describe("global XHTTP proxy routing", () => {
   it("rewrites a packet-up Referer to the private XHTTP path while preserving its origin and query", () => {
     expect(rewritePublicXhttpReferer("https://gateway.example/xhttp/opaque_global_token/?x_padding=abc", "/xhttp/opaque_global_token")).toBe("https://gateway.example/xhttp/?x_padding=abc");
     expect(rewritePublicXhttpReferer("https://gateway.example/other", "/xhttp/opaque_global_token")).toBe("https://gateway.example/other");
+  });
+
+  it("pipes unlimited client payloads directly without allocating a speed-limit Transform", async () => {
+    const source = new PassThrough();
+    const destination = new PassThrough();
+    const received = new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      destination.on("data", chunk => chunks.push(Buffer.from(chunk)));
+      destination.once("end", () => resolve(Buffer.concat(chunks)));
+      destination.once("error", reject);
+    });
+
+    const transform = pipeXhttpPayload(source, destination, undefined);
+    source.end(Buffer.from("unlimited-direct-payload"));
+
+    expect(transform).toBeUndefined();
+    await expect(received).resolves.toEqual(Buffer.from("unlimited-direct-payload"));
   });
 });
 

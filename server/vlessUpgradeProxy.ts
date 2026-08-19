@@ -34,10 +34,14 @@ export function speedLimitBytesPerSecond(speedLimitMbps: number) {
   return speedLimitMbps > 0 ? (speedLimitMbps * 1_000_000) / 8 : 0;
 }
 
-export function createSpeedLimitTransform(limiter?: ClientSpeedLimiter) {
+/**
+ * This function intentionally requires a finite limiter. Unlimited clients must
+ * never allocate a Transform or enter this code path at all.
+ */
+export function createSpeedLimitTransform(limiter: ClientSpeedLimiter) {
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
-      const delay = limiter?.reserve(chunk.length) ?? 0;
+      const delay = limiter.reserve(chunk.length);
       if (delay <= 0) {
         callback(null, chunk);
         return;
@@ -217,7 +221,9 @@ async function bridgeUpgrade(
     upstream.write(buildUpgradeRequest(req, route.port, route.internalPath));
     trackGatewayTunnel(socket, upstream, route.client?.id, sourceIdentity, releaseConnectionReservation);
     if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
-    const speedLimiter = route.client ? limiterForGatewayClient(route.client) : undefined;
+    const speedLimiter = route.client && route.client.speedLimitMbps > 0
+      ? limiterForGatewayClient(route.client)
+      : undefined;
     if (speedLimiter) {
       const clientToGateway = createSpeedLimitTransform(speedLimiter);
       const gatewayToClient = createSpeedLimitTransform(speedLimiter);
