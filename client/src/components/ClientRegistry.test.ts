@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy, compactQuotaUsageText, compactSpeedPolicy, compactSpeedToneClass, nextExpandedCompactClientId } from "./ClientRegistry";
+import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy, compactClientActionContainerClass, compactClientCardGridClass, compactExpansionButtonClass, compactQuotaUsageText, compactSpeedPolicy, compactSpeedToneClass, expandableClientActionsClass, nextExpandedCompactClientId } from "./ClientRegistry";
 
 describe("client activation state presentation", () => {
   it("shows a disabled Activating control while a new client is waiting for activation", () => {
@@ -45,5 +45,13 @@ describe("client activation state presentation", () => {
     expect(compactSpeedToneClass(-1)).toBe("text-muted-foreground");
     expect(compactSpeedToneClass(64)).toBe("text-foreground");
     expect(compactQuotaUsageText(3.33 * 1024 ** 3, 50 * 1024 ** 3)).toBe("3.33 GB / 50 GB");
+  });
+
+  it("keeps compact cards stacked through tablet width and sends the expansion control to the action row's far edge", () => {
+    expect(compactClientCardGridClass).toContain("lg:grid-cols-");
+    expect(compactClientCardGridClass).not.toContain("sm:grid-cols-");
+    expect(compactClientActionContainerClass).toBe("w-full lg:w-auto lg:justify-self-end");
+    expect(expandableClientActionsClass).toBe("flex w-full items-center gap-2 lg:w-auto");
+    expect(compactExpansionButtonClass).toBe("ml-auto h-9 w-9 lg:ml-0");
   });
 });

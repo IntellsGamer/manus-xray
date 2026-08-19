@@ -190,3 +190,4 @@
 - [x] Start the private Xray runtime once per deployed instance before serving tunnels, without restoring per-request Xray reload behavior.
 - [x] Await user confirmation that the published deployment is ready before any further production-domain Shadowsocks test.
 - [x] Ensure unlimited speed (`-1`) bypasses every limiter lookup, token-bucket reservation, delay, and throttle path across WebSocket and XHTTP tunnels.
+- [x] Refine compact client-card actions at tablet and mobile widths: use the action-row width cleanly and place the expand/collapse control at the far right.
