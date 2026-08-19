@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { ClientPolicyTemplate, clientPolicyTemplates, GatewayClient, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, terminalLeases, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import type { OwnerDeviceObservation } from "./ownerDevices";
 import { ENV } from './_core/env';
-import { createGatewayCredential, createSubscriptionToken, createVlessUuid, normaliseGatewayPaths, normaliseWsPath } from "./vless";
+import { createGatewayCredential, createShadowsocks2022Key, createSubscriptionToken, createVlessUuid, normaliseGatewayPaths, normaliseWsPath } from "./vless";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -196,13 +196,18 @@ export async function ensureVlessProfile(defaultServerAddress: string): Promise<
       trojanPassword: existing.trojanPassword || createGatewayCredential(),
       socksUsername: existing.socksUsername || "gateway",
       socksPassword: existing.socksPassword || createGatewayCredential(),
+      shadowsocksServerKey: existing.shadowsocksServerKey || createShadowsocks2022Key(),
+      shadowsocksUserKey: existing.shadowsocksUserKey || createShadowsocks2022Key(),
     };
-    const needsBackfill = !existing.vmessUuid || !existing.trojanPassword || !existing.socksUsername || !existing.socksPassword;
-    if (!needsBackfill) return existing;
+    const needsBackfill = !existing.vmessUuid || !existing.trojanPassword || !existing.socksUsername || !existing.socksPassword || !existing.shadowsocksServerKey || !existing.shadowsocksUserKey;
+    const clients = await listGatewayClients();
+    const clientsNeedingShadowsocksBackfill = clients.filter(client => !client.shadowsocksUserKey);
+    if (!needsBackfill && !clientsNeedingShadowsocksBackfill.length) return existing;
 
     const db = await getDb();
     if (!db) throw new Error("Database is unavailable");
-    await db.update(vlessProfiles).set(missingProtocolCredentials).where(eq(vlessProfiles.id, 1));
+    if (needsBackfill) await db.update(vlessProfiles).set(missingProtocolCredentials).where(eq(vlessProfiles.id, 1));
+    await Promise.all(clientsNeedingShadowsocksBackfill.map(client => db.update(gatewayClients).set({ shadowsocksUserKey: createShadowsocks2022Key() }).where(eq(gatewayClients.id, client.id))));
     const hydrated = await getVlessProfile();
     if (!hydrated) throw new Error("Failed to hydrate multi-protocol gateway profile");
     return hydrated;
@@ -226,6 +231,9 @@ export async function ensureVlessProfile(defaultServerAddress: string): Promise<
     socksUsername: "gateway",
     socksPassword: createGatewayCredential(),
     socksWsPath: "/socks",
+    shadowsocksServerKey: createShadowsocks2022Key(),
+    shadowsocksUserKey: createShadowsocks2022Key(),
+    shadowsocksWsPath: "/shadowsocks",
   };
 
   try {
@@ -259,7 +267,7 @@ export async function updateVlessProfile(
   return profile;
 }
 
-export async function updateGatewayPathsAndGlobalProfile(changes: Pick<VlessProfile, "wsPath" | "vmessWsPath" | "trojanWsPath" | "socksWsPath" | "globalProfileEnabled">) {
+export async function updateGatewayPathsAndGlobalProfile(changes: Pick<VlessProfile, "wsPath" | "vmessWsPath" | "trojanWsPath" | "socksWsPath" | "shadowsocksWsPath" | "globalProfileEnabled">) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
 
@@ -293,7 +301,7 @@ export async function regenerateSubscriptionToken() {
   return profile;
 }
 
-export async function regenerateGatewayProtocolCredential(protocol: "vmess" | "trojan" | "socks") {
+export async function regenerateGatewayProtocolCredential(protocol: "vmess" | "trojan" | "socks" | "shadowsocks") {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
 
@@ -301,7 +309,9 @@ export async function regenerateGatewayProtocolCredential(protocol: "vmess" | "t
     ? { vmessUuid: createVlessUuid() }
     : protocol === "trojan"
       ? { trojanPassword: createGatewayCredential() }
-      : { socksPassword: createGatewayCredential() };
+      : protocol === "socks"
+        ? { socksPassword: createGatewayCredential() }
+        : { shadowsocksUserKey: createShadowsocks2022Key() };
   await db.update(vlessProfiles).set(changes).where(eq(vlessProfiles.id, 1));
   const profile = await getVlessProfile();
   if (!profile) throw new Error("VLESS profile was not found");
@@ -359,9 +369,9 @@ export async function deleteClientPolicyTemplate(id: number) {
 export type GatewayRecoverySnapshot = {
   schemaVersion: 1;
   exportedAt: string;
-  profile: Pick<VlessProfile, "uuid" | "serverAddress" | "port" | "wsPath" | "tlsEnabled" | "subscriptionToken" | "vmessUuid" | "vmessWsPath" | "trojanPassword" | "trojanWsPath" | "socksUsername" | "socksPassword" | "socksWsPath" | "globalProfileEnabled">;
+  profile: Pick<VlessProfile, "uuid" | "serverAddress" | "port" | "wsPath" | "tlsEnabled" | "subscriptionToken" | "vmessUuid" | "vmessWsPath" | "trojanPassword" | "trojanWsPath" | "socksUsername" | "socksPassword" | "socksWsPath" | "shadowsocksServerKey" | "shadowsocksUserKey" | "shadowsocksWsPath" | "globalProfileEnabled">;
   templates: Array<Pick<ClientPolicyTemplate, "name" | "trafficLimitBytes" | "dayLimit" | "speedLimitMbps" | "connectionLimit">>;
-  clients: Array<Pick<GatewayClient, "name" | "enabled" | "vlessUuid" | "vmessUuid" | "trojanPassword" | "socksUsername" | "socksPassword" | "subscriptionToken" | "connectionToken" | "trafficLimitBytes" | "trafficUsedBytes" | "dayLimit" | "speedLimitMbps" | "connectionLimit" | "expiresAt" | "quotaExhaustedAt">>;
+  clients: Array<Pick<GatewayClient, "name" | "enabled" | "vlessUuid" | "vmessUuid" | "trojanPassword" | "socksUsername" | "socksPassword" | "shadowsocksUserKey" | "subscriptionToken" | "connectionToken" | "trafficLimitBytes" | "trafficUsedBytes" | "dayLimit" | "speedLimitMbps" | "connectionLimit" | "expiresAt" | "quotaExhaustedAt">>;
 };
 
 export async function exportGatewayRecoverySnapshot(): Promise<GatewayRecoverySnapshot> {
@@ -385,6 +395,9 @@ export async function exportGatewayRecoverySnapshot(): Promise<GatewayRecoverySn
       socksUsername: profile.socksUsername,
       socksPassword: profile.socksPassword,
       socksWsPath: profile.socksWsPath,
+      shadowsocksServerKey: profile.shadowsocksServerKey,
+      shadowsocksUserKey: profile.shadowsocksUserKey,
+      shadowsocksWsPath: profile.shadowsocksWsPath,
       globalProfileEnabled: profile.globalProfileEnabled,
     },
     templates: templates.map(template => ({
@@ -402,6 +415,7 @@ export async function exportGatewayRecoverySnapshot(): Promise<GatewayRecoverySn
       trojanPassword: client.trojanPassword,
       socksUsername: client.socksUsername,
       socksPassword: client.socksPassword,
+      shadowsocksUserKey: client.shadowsocksUserKey,
       subscriptionToken: client.subscriptionToken,
       connectionToken: client.connectionToken,
       trafficLimitBytes: Number(client.trafficLimitBytes),
@@ -418,15 +432,25 @@ export async function exportGatewayRecoverySnapshot(): Promise<GatewayRecoverySn
 export async function replaceGatewayRecoverySnapshot(snapshot: GatewayRecoverySnapshot) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
+  const normalizedSnapshot: GatewayRecoverySnapshot = {
+    ...snapshot,
+    profile: {
+      ...snapshot.profile,
+      shadowsocksServerKey: snapshot.profile.shadowsocksServerKey || createShadowsocks2022Key(),
+      shadowsocksUserKey: snapshot.profile.shadowsocksUserKey || createShadowsocks2022Key(),
+      shadowsocksWsPath: snapshot.profile.shadowsocksWsPath || "/shadowsocks",
+    },
+    clients: snapshot.clients.map(client => ({ ...client, shadowsocksUserKey: client.shadowsocksUserKey || createShadowsocks2022Key() })),
+  };
   await db.transaction(async tx => {
     await tx.delete(subscriptionEvents);
     await tx.delete(gatewayClients);
     await tx.delete(clientPolicyTemplates);
     await tx.delete(vlessProfiles).where(eq(vlessProfiles.id, 1));
-    await tx.insert(vlessProfiles).values({ id: 1, ...snapshot.profile });
-    if (snapshot.templates.length) await tx.insert(clientPolicyTemplates).values(snapshot.templates);
-    if (snapshot.clients.length) {
-      await tx.insert(gatewayClients).values(snapshot.clients.map(client => ({
+    await tx.insert(vlessProfiles).values({ id: 1, ...normalizedSnapshot.profile });
+    if (normalizedSnapshot.templates.length) await tx.insert(clientPolicyTemplates).values(normalizedSnapshot.templates);
+    if (normalizedSnapshot.clients.length) {
+      await tx.insert(gatewayClients).values(normalizedSnapshot.clients.map(client => ({
         ...client,
         trafficStatsSnapshotBytes: 0,
         creationRequestId: null,
@@ -477,6 +501,7 @@ export async function createGatewayClient(input: { name: string; trafficLimitByt
       trojanPassword: createGatewayCredential(),
       socksUsername: clientSocksUsername(),
       socksPassword: createGatewayCredential(),
+      shadowsocksUserKey: createShadowsocks2022Key(),
       subscriptionToken: createSubscriptionToken(),
       connectionToken: createGatewayCredential(),
       creationRequestId: input.creationRequestId ?? null,
@@ -548,6 +573,7 @@ export async function rotateGatewayClientCredentials(id: number) {
     trojanPassword: createGatewayCredential(),
     socksUsername: clientSocksUsername(),
     socksPassword: createGatewayCredential(),
+    shadowsocksUserKey: createShadowsocks2022Key(),
     subscriptionToken: createSubscriptionToken(),
   }).where(eq(gatewayClients.id, id));
   const client = await getGatewayClientById(id);
@@ -565,6 +591,7 @@ export async function revokeGatewayClient(id: number) {
     trojanPassword: createGatewayCredential(),
     socksUsername: clientSocksUsername(),
     socksPassword: createGatewayCredential(),
+    shadowsocksUserKey: createShadowsocks2022Key(),
     subscriptionToken: createSubscriptionToken(),
   }).where(eq(gatewayClients.id, id));
   const client = await getGatewayClientById(id);

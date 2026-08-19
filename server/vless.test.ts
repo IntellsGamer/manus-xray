@@ -17,6 +17,9 @@ const profile: VlessProfile = {
   socksUsername: "gateway",
   socksPassword: "test-socks-password",
   socksWsPath: "/socks",
+  shadowsocksServerKey: "MDEyMzQ1Njc4OUFCQ0RFRg==",
+  shadowsocksUserKey: "RkVEQ0JBOTg3NjU0MzIxMA==",
+  shadowsocksWsPath: "/shadowsocks",
   globalProfileEnabled: true,
   createdAt: new Date("2026-08-17T00:00:00Z"),
   updatedAt: new Date("2026-08-17T00:00:00Z"),
@@ -31,6 +34,7 @@ const namedClient: GatewayClient = {
   trojanPassword: "named-trojan-password",
   socksUsername: "client-test-device",
   socksPassword: "named-socks-password",
+  shadowsocksUserKey: "QUJDREVGR0hJSktMTU5PUA==",
   subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   connectionToken: "named-client-route-token",
   trafficLimitBytes: -1,
@@ -63,11 +67,12 @@ describe("VLESS profile serialization", () => {
     expect(xhttp.searchParams.get("path")).toBe(`/xhttp/${profile.subscriptionToken}`);
     expect(JSON.parse(xhttp.searchParams.get("extra") || "{}")).toEqual({ headers: { "User-Agent": "firefox" }, xPaddingBytes: "100-1000", scMaxBufferedPosts: 30, scStreamUpServerSecs: "20-80" });
     const subscriptionLines = Buffer.from(buildSubscriptionPayload(profile), "base64").toString("utf8").split("\n");
-    expect(subscriptionLines).toHaveLength(4);
+    expect(subscriptionLines).toHaveLength(5);
     expect(new URL(subscriptionLines[0] || "").searchParams.get("path")).toBe(`/vless/${profile.subscriptionToken}`);
     expect(new URL(subscriptionLines[1] || "").searchParams.get("type")).toBe("xhttp");
     expect(subscriptionLines[2]).toMatch(/^vmess:\/\//);
     expect(subscriptionLines[3]).toMatch(/^trojan:\/\//);
+    expect(subscriptionLines[4]).toMatch(/^ss:\/\//);
   });
 
   it("normalizes the WebSocket path and produces a valid VLESS inbound shape", () => {
@@ -81,9 +86,10 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[0]?.listen).toBe("127.0.0.1");
     expect(config.inbounds[0]?.settings.clients[0]).toEqual({ id: profile.uuid });
     expect(config.inbounds[0]?.streamSettings.wsSettings.path).toBe("/vless");
-    expect(config.inbounds).toHaveLength(5);
-    expect(config.inbounds.map(inbound => inbound.port)).toEqual([10000, 10001, 10002, 10003, 10004]);
+    expect(config.inbounds).toHaveLength(6);
+    expect(config.inbounds.map(inbound => inbound.port)).toEqual([10000, 10001, 10002, 10003, 10004, 10005]);
     expect(config.inbounds[4]).toMatchObject({ port: 10004, streamSettings: { network: "xhttp", xhttpSettings: { path: "/xhttp", mode: "packet-up", headers: { "User-Agent": "firefox" }, xPaddingBytes: "100-1000", scMaxBufferedPosts: 30, scStreamUpServerSecs: "20-80" } } });
+    expect(config.inbounds[5]).toMatchObject({ port: 10005, protocol: "shadowsocks", settings: { network: "tcp", method: "2022-blake3-aes-128-gcm", password: profile.shadowsocksServerKey, users: [{ password: profile.shadowsocksUserKey, level: 0 }] }, streamSettings: { wsSettings: { path: "/shadowsocks" } } });
   });
 
   it("serializes VMess, Trojan, and SOCKS5 imports with their isolated transport paths", () => {
@@ -98,6 +104,10 @@ describe("VLESS profile serialization", () => {
     expect(socks.outbounds[0].protocol).toBe("socks");
     expect(socks.outbounds[0].settings.servers[0].users[0]).toEqual({ user: "gateway", pass: "test-socks-password" });
     expect(socks.outbounds[0].streamSettings.wsSettings.path).toBe("/socks");
+    const shadowsocks = new URL(buildClientConnectionDetails(profile, namedClient).shadowsocksUri);
+    expect(shadowsocks.protocol).toBe("ss:");
+    expect(shadowsocks.searchParams.get("plugin")).toContain("mode=websocket");
+    expect(shadowsocks.searchParams.get("plugin")).toContain("path=/shadowsocks/named-client-route-token");
   });
 
   it("isolates named credentials and excludes global credentials when the global profile is disabled", () => {
@@ -110,7 +120,8 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[2]?.settings.clients).toEqual([{ password: namedClient.trojanPassword, email: `gateway-client-${namedClient.id}-trojan@local.invalid`, level: 0 }]);
     expect(config.inbounds[3]?.settings.accounts).toEqual([]);
     expect(config.inbounds[4]?.settings.clients).toEqual([{ id: namedClient.vlessUuid, email: `gateway-client-${namedClient.id}-vless@local.invalid`, level: 0 }]);
-    expect(config.inbounds[5]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 10109, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
+    expect(config.inbounds[5]).toMatchObject({ protocol: "shadowsocks", settings: { users: [{ password: namedClient.shadowsocksUserKey, email: `gateway-client-${namedClient.id}-shadowsocks@local.invalid`, level: 0 }] } });
+    expect(config.inbounds[6]).toMatchObject({ tag: "gateway-client-9-socks-in", port: 10109, settings: { accounts: [{ user: namedClient.socksUsername, pass: namedClient.socksPassword }] } });
     expect(clientDetails.vlessUri).toContain(namedClient.vlessUuid);
     expect(new URL(clientDetails.vlessUri).searchParams.get("path")).toBe("/vless/named-client-route-token");
     const namedXhttp = new URL(clientDetails.xhttpUri);
@@ -124,12 +135,12 @@ describe("VLESS profile serialization", () => {
     expect(clientDetails.vmessUri).toContain(Buffer.from(namedClient.vmessUuid).toString("base64").slice(0, 0));
     expect(clientDetails.trojanUri).toContain(encodeURIComponent(namedClient.trojanPassword));
     const subscriptionLines = Buffer.from(buildClientSubscriptionPayload(profile, namedClient), "base64").toString("utf8").split("\n");
-    expect(subscriptionLines).toHaveLength(4);
+    expect(subscriptionLines).toHaveLength(5);
     expect(new URL(subscriptionLines[1] || "").searchParams.get("path")).toBe("/xhttp/named-client-route-token");
   });
 
   it("rejects colliding protocol paths after normalization", () => {
-    expect(() => normaliseGatewayPaths({ wsPath: "shared", vmessWsPath: "/shared", trojanWsPath: "/trojan", socksWsPath: "/socks" })).toThrow("different WebSocket path");
+    expect(() => normaliseGatewayPaths({ wsPath: "shared", vmessWsPath: "/shared", trojanWsPath: "/trojan", socksWsPath: "/socks", shadowsocksWsPath: "/shadowsocks" })).toThrow("different WebSocket path");
   });
 
   it("maps a named client’s opaque public routes to the existing private Xray protocol path and port", () => {
@@ -141,8 +152,10 @@ describe("VLESS profile serialization", () => {
       vmess: "/vmess/named-client-route-token",
       trojan: "/trojan/named-client-route-token",
       socks: "/socks/named-client-route-token",
+      shadowsocks: "/shadowsocks/named-client-route-token",
     });
     expect(route).toMatchObject({ protocol: "vless", internalPath: "/vless", port: 10000, client: { id: namedClient.id } });
+    expect(resolvePublicGatewayRoute(profile, 10000, [namedClient], paths.shadowsocks)).toMatchObject({ protocol: "shadowsocks", internalPath: "/shadowsocks", port: 10005, client: { id: namedClient.id } });
     expect(resolvePublicGatewayRoute(profile, 10000, [namedClient], "/vless/unknown-route")).toBeUndefined();
   });
 });

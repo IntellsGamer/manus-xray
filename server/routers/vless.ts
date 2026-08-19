@@ -34,6 +34,7 @@ const pathsInput = z.object({
   vmessWsPath: z.string().trim().min(1).max(255),
   trojanWsPath: z.string().trim().min(1).max(255),
   socksWsPath: z.string().trim().min(1).max(255),
+  shadowsocksWsPath: z.string().trim().min(1).max(255),
   globalProfileEnabled: z.boolean(),
 });
 
@@ -61,6 +62,7 @@ function presentProfile(profile: Awaited<ReturnType<typeof ensureVlessProfile>>)
     vmessWsPath: profile.vmessWsPath,
     trojanWsPath: profile.trojanWsPath,
     socksWsPath: profile.socksWsPath,
+    shadowsocksWsPath: profile.shadowsocksWsPath,
     tlsEnabled: profile.tlsEnabled,
     globalProfileEnabled: profile.globalProfileEnabled,
     vlessUri: connection.vlessUri,
@@ -69,6 +71,7 @@ function presentProfile(profile: Awaited<ReturnType<typeof ensureVlessProfile>>)
     vmess: { uuid: profile.vmessUuid, wsPath: profile.vmessWsPath, uri: connection.vmessUri },
     trojan: { wsPath: profile.trojanWsPath, uri: connection.trojanUri },
     socks5: { username: profile.socksUsername, wsPath: profile.socksWsPath, clientConfig: connection.socksClientConfig },
+    shadowsocks: { wsPath: profile.shadowsocksWsPath, uri: connection.shadowsocksUri, clientConfig: connection.shadowsocksClientConfig },
     subscriptionPath: `/sub/${profile.subscriptionToken}`,
     updatedAt: profile.updatedAt,
   };
@@ -130,7 +133,7 @@ export const vlessRouter = router({
     await applyXrayProfile(profile);
     return presentProfile(profile);
   }),
-  regenerateProtocolCredential: adminProcedure.input(z.object({ protocol: z.enum(["vmess", "trojan", "socks"]) })).mutation(async ({ ctx, input }) => {
+  regenerateProtocolCredential: adminProcedure.input(z.object({ protocol: z.enum(["vmess", "trojan", "socks", "shadowsocks"]) })).mutation(async ({ ctx, input }) => {
     await profileForRequest(ctx.req.headers);
     const profile = await regenerateGatewayProtocolCredential(input.protocol);
     await applyXrayProfile(profile);

@@ -97,8 +97,8 @@ async function serveSubscription(req: Request, res: Response) {
     const paths = clientWebSocketPaths(gateway, client);
     res.status(200).set("Cache-Control", "no-store, max-age=0").type("text/html; charset=utf-8").send(statusPage({
       name: client.name, enabled: client.enabled,
-      paths: [paths.vless, clientXhttpPath(client), paths.vmess, paths.trojan, paths.socks],
-      imports: [details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri],
+      paths: [paths.vless, clientXhttpPath(client), paths.vmess, paths.trojan, paths.socks, paths.shadowsocks],
+      imports: [details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri, details.shadowsocksUri],
       quota: { trafficLimitBytes: client.trafficLimitBytes, trafficUsedBytes: client.trafficUsedBytes, trafficUsageAvailable: true, dayLimit: client.dayLimit, speedLimitMbps: client.speedLimitMbps, connectionLimit: client.connectionLimit, expiresAt: client.expiresAt },
     }));
     return;

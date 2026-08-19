@@ -29,6 +29,9 @@ const recoverySnapshotInput = z.object({
     socksUsername: z.string().min(1).max(64),
     socksPassword: z.string().min(1).max(64),
     socksWsPath: z.string().trim().min(1).max(255),
+    shadowsocksServerKey: z.string().max(128).optional().default(""),
+    shadowsocksUserKey: z.string().max(128).optional().default(""),
+    shadowsocksWsPath: z.string().trim().max(255).optional().default("/shadowsocks"),
     globalProfileEnabled: z.boolean(),
   }),
   templates: z.array(z.object({ name: z.string().trim().min(1).max(120), ...policyInput })).max(500),
@@ -40,6 +43,7 @@ const recoverySnapshotInput = z.object({
     trojanPassword: z.string().min(1).max(64),
     socksUsername: z.string().min(1).max(64),
     socksPassword: z.string().min(1).max(64),
+    shadowsocksUserKey: z.string().max(128).optional().default(""),
     subscriptionToken: z.string().min(1).max(96),
     connectionToken: z.string().min(1).max(64),
     trafficUsedBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
@@ -56,6 +60,7 @@ const recoverySnapshotInput = z.object({
   assertUnique(snapshot.clients.map(client => client.vmessUuid), "VMess UUID");
   assertUnique(snapshot.clients.map(client => client.trojanPassword), "Trojan password");
   assertUnique(snapshot.clients.map(client => client.socksUsername), "SOCKS username");
+  assertUnique(snapshot.clients.filter(client => client.shadowsocksUserKey).map(client => client.shadowsocksUserKey), "Shadowsocks user key");
   assertUnique(snapshot.clients.map(client => client.subscriptionToken), "subscription token");
   assertUnique(snapshot.clients.map(client => client.connectionToken), "connection token");
 });

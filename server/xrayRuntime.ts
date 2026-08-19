@@ -39,7 +39,7 @@ function safeCounter(value: unknown) {
 
 export function parseClientTrafficStats(payload: string, clients: Pick<GatewayClient, "id">[]) {
   const totals = new Map<number, number>();
-  const protocols: TrafficProtocol[] = ["vless", "vmess", "trojan"];
+  const protocols: TrafficProtocol[] = ["vless", "vmess", "trojan", "shadowsocks"];
   const emailToId = new Map(clients.flatMap(client => protocols.map(protocol => [clientTrafficEmail(client.id, protocol), client.id] as const)));
   const socksTagToId = new Map(clients.map(client => [clientSocksInboundTag(client.id), client.id] as const));
   const parsed = JSON.parse(payload) as { stat?: Array<{ name?: unknown; value?: unknown }> };

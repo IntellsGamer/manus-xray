@@ -109,7 +109,7 @@
   .protocol-tab:hover { background: var(--accent); color: var(--accent-foreground); }
   .protocol-tab.is-active { background: color-mix(in oklch, var(--primary) 12%, transparent); color: var(--foreground); }
   .protocol-dot { display: inline-block; width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--primary); }
-  .protocol-dot.violet { background: oklch(0.63 0.19 295); } .protocol-dot.amber { background: oklch(0.72 0.15 75); } .protocol-dot.emerald { background: oklch(0.69 0.16 161); }
+  .protocol-dot.violet { background: oklch(0.63 0.19 295); } .protocol-dot.amber { background: oklch(0.72 0.15 75); } .protocol-dot.emerald { background: oklch(0.69 0.16 161); } .protocol-dot.rose { background: oklch(0.66 0.19 15); }
   .protocol-code-pane { border: 1px solid var(--border); border-radius: 0.75rem; background: color-mix(in oklch, var(--muted) 55%, transparent); padding: 0.75rem; color: var(--foreground); }
   .dark .protocol-code-pane { background: rgb(255 255 255 / 3%); }
   .icon-action, .theme-icon-button { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 0.45rem; color: var(--muted-foreground); transition: all 160ms cubic-bezier(0.23, 1, 0.32, 1); }

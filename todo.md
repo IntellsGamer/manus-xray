@@ -186,3 +186,4 @@
 - [x] Preview note: the managed preview has no local Xray runtime and returned 502, so validate packet-up in an isolated local Xray pair; publish before the successful production-domain transfer test.
 - [x] Attempt a stream-up XHTTP bridge repair: the exact published named-client import timed out with zero response bytes, so stream-up will not be published as the default transport.
 - [x] Restore the XHTTP inbound from temporary auto mode to packet-up-only after the unsuccessful stream-up probe.
+- [ ] Add Shadowsocks 2022 over WebSocket globally and per named client, including credentials, opaque routes, Xray runtime, subscription/QR output, and existing quota, speed, connection, activation, storage, and day-limit enforcement.

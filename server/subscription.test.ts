@@ -16,7 +16,7 @@ vi.mock("./xrayRuntime", () => ({ enforceGatewayTrafficQuotas: runtimeMock.enfor
 import { registerSubscriptionRoute } from "./subscription";
 
 const namedClient = {
-  id: 4, name: "Browser client", enabled: true, vlessUuid: "faec6149-bbf5-45f8-a1bc-657d64023841", vmessUuid: "be1d4606-5320-450d-82ae-2e447f6a7d8b", trojanPassword: "named-trojan-password", socksUsername: "client-browser", socksPassword: "named-socks-password", subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", connectionToken: "browser-client-route-token", trafficLimitBytes: 10 * 1024 * 1024, trafficUsedBytes: 2 * 1024 * 1024, trafficStatsSnapshotBytes: 0, dayLimit: -1, speedLimitMbps: 25, connectionLimit: 3, expiresAt: null, lastSubscriptionAt: null, subscriptionDeliveryCount: 0, createdAt: new Date(), updatedAt: new Date(),
+  id: 4, name: "Browser client", enabled: true, vlessUuid: "faec6149-bbf5-45f8-a1bc-657d64023841", vmessUuid: "be1d4606-5320-450d-82ae-2e447f6a7d8b", trojanPassword: "named-trojan-password", socksUsername: "client-browser", socksPassword: "named-socks-password", shadowsocksUserKey: "QUJDREVGR0hJSktMTU5PUA==", subscriptionToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", connectionToken: "browser-client-route-token", trafficLimitBytes: 10 * 1024 * 1024, trafficUsedBytes: 2 * 1024 * 1024, trafficStatsSnapshotBytes: 0, dayLimit: -1, speedLimitMbps: 25, connectionLimit: 3, expiresAt: null, lastSubscriptionAt: null, subscriptionDeliveryCount: 0, createdAt: new Date(), updatedAt: new Date(),
 };
 
 const profile: VlessProfile = {
@@ -34,6 +34,9 @@ const profile: VlessProfile = {
   socksUsername: "gateway",
   socksPassword: "test-socks-password",
   socksWsPath: "/socks",
+  shadowsocksServerKey: "MDEyMzQ1Njc4OUFCQ0RFRg==",
+  shadowsocksUserKey: "RkVEQ0JBOTg3NjU0MzIxMA==",
+  shadowsocksWsPath: "/shadowsocks",
   globalProfileEnabled: true,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -112,7 +115,7 @@ describe("subscription route", () => {
     expect(html).not.toContain("Last observed subscription delivery");
   });
 
-  it("returns four named-client imports including VLESS/XHTTP in the encoded subscription feed", async () => {
+  it("returns five named-client imports including VLESS/XHTTP and Shadowsocks in the encoded subscription feed", async () => {
     databaseMock.getVlessProfileBySubscriptionToken.mockResolvedValue(undefined);
     databaseMock.getGatewayClientBySubscriptionToken.mockResolvedValue(namedClient);
     databaseMock.getVlessProfile.mockResolvedValue(profile);
@@ -122,9 +125,10 @@ describe("subscription route", () => {
 
     expect(response.status).toBe(200);
     const imports = Buffer.from(await response.text(), "base64").toString("utf8").split("\n");
-    expect(imports).toHaveLength(4);
+    expect(imports).toHaveLength(5);
     expect(new URL(imports[1] || "").searchParams.get("type")).toBe("xhttp");
     expect(new URL(imports[1] || "").searchParams.get("path")).toBe("/xhttp/browser-client-route-token");
+    expect(imports[4]).toMatch(/^ss:\/\//);
   });
 
   it("renders unlimited speed and connection sentinels as clear subscription status", async () => {

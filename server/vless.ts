@@ -13,24 +13,31 @@ export function createGatewayCredential() {
   return randomBytes(24).toString("base64url");
 }
 
+/** A 16-byte PSK for the efficient 2022-blake3-aes-128-gcm Shadowsocks 2022 method. */
+export function createShadowsocks2022Key() {
+  return randomBytes(16).toString("base64");
+}
+
 export function normaliseWsPath(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "/vless";
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
-export function normaliseGatewayPaths(paths: { wsPath: string; vmessWsPath: string; trojanWsPath: string; socksWsPath: string }) {
+export function normaliseGatewayPaths(paths: { wsPath: string; vmessWsPath: string; trojanWsPath: string; socksWsPath: string; shadowsocksWsPath: string }) {
   const normalized = {
     wsPath: normaliseWsPath(paths.wsPath),
     vmessWsPath: normaliseWsPath(paths.vmessWsPath),
     trojanWsPath: normaliseWsPath(paths.trojanWsPath),
     socksWsPath: normaliseWsPath(paths.socksWsPath),
+    shadowsocksWsPath: normaliseWsPath(paths.shadowsocksWsPath),
   };
-  if (new Set(Object.values(normalized)).size !== 4) throw new Error("Each protocol must use a different WebSocket path");
+  if (new Set(Object.values(normalized)).size !== 5) throw new Error("Each protocol must use a different WebSocket path");
   return normalized;
 }
 
-export type GatewayProtocol = "vless" | "vmess" | "trojan" | "socks";
+export type GatewayProtocol = "vless" | "vmess" | "trojan" | "socks" | "shadowsocks";
+export const shadowsocks2022Method = "2022-blake3-aes-128-gcm";
 
 const xhttpExtraSettings = {
   headers: { "User-Agent": "firefox" },
@@ -43,12 +50,17 @@ function routeWithConnectionToken(basePath: string, connectionToken: string) {
   return `${normaliseWsPath(basePath).replace(/\/+$/, "")}/${connectionToken}`;
 }
 
+function resolvedShadowsocksWsPath(profile: VlessProfile) {
+  return normaliseWsPath(profile.shadowsocksWsPath || "/shadowsocks");
+}
+
 export function clientWebSocketPaths(profile: VlessProfile, client: Pick<GatewayClient, "connectionToken">) {
   return {
     vless: routeWithConnectionToken(profile.wsPath, client.connectionToken),
     vmess: routeWithConnectionToken(profile.vmessWsPath, client.connectionToken),
     trojan: routeWithConnectionToken(profile.trojanWsPath, client.connectionToken),
     socks: routeWithConnectionToken(profile.socksWsPath, client.connectionToken),
+    shadowsocks: routeWithConnectionToken(resolvedShadowsocksWsPath(profile), client.connectionToken),
   };
 }
 
@@ -58,6 +70,7 @@ export function gatewayWebSocketPaths(profile: VlessProfile) {
     vmess: routeWithConnectionToken(profile.vmessWsPath, profile.subscriptionToken),
     trojan: routeWithConnectionToken(profile.trojanWsPath, profile.subscriptionToken),
     socks: routeWithConnectionToken(profile.socksWsPath, profile.subscriptionToken),
+    shadowsocks: routeWithConnectionToken(resolvedShadowsocksWsPath(profile), profile.subscriptionToken),
   };
 }
 
@@ -71,7 +84,7 @@ export function clientXhttpPath(client: Pick<GatewayClient, "connectionToken">) 
 
 function publicGatewayProfile(profile: VlessProfile): VlessProfile {
   const paths = gatewayWebSocketPaths(profile);
-  return { ...profile, wsPath: paths.vless, vmessWsPath: paths.vmess, trojanWsPath: paths.trojan, socksWsPath: paths.socks };
+  return { ...profile, wsPath: paths.vless, vmessWsPath: paths.vmess, trojanWsPath: paths.trojan, socksWsPath: paths.socks, shadowsocksWsPath: paths.shadowsocks };
 }
 
 export function buildVlessUri(profile: VlessProfile) {
@@ -145,6 +158,28 @@ export function buildTrojanUri(profile: VlessProfile) {
   return `${endpoint.toString()}#${encodeURIComponent("Nginx Gateway · Trojan")}`;
 }
 
+export function buildShadowsocksUri(profile: VlessProfile) {
+  const credential = Buffer.from(`${shadowsocks2022Method}:${profile.shadowsocksServerKey}:${profile.shadowsocksUserKey}`, "utf8").toString("base64url");
+  const endpoint = new URL(`ss://${credential}@${profile.serverAddress}:${profile.port}`);
+  const plugin = ["v2ray-plugin", "mode=websocket", `host=${profile.serverAddress}`, `path=${normaliseWsPath(profile.shadowsocksWsPath)}`];
+  if (profile.tlsEnabled) plugin.push("tls");
+  endpoint.searchParams.set("plugin", plugin.join(";"));
+  return `${endpoint.toString()}#${encodeURIComponent("Nginx Gateway · Shadowsocks 2022")}`;
+}
+
+export function buildShadowsocksClientConfig(profile: VlessProfile) {
+  return JSON.stringify({
+    log: { loglevel: "warning" },
+    inbounds: [{ listen: "127.0.0.1", port: 10808, protocol: "socks", settings: { auth: "noauth", udp: false, ip: "127.0.0.1" } }],
+    outbounds: [{
+      tag: "proxy",
+      protocol: "shadowsocks",
+      settings: { servers: [{ address: profile.serverAddress, port: profile.port, method: shadowsocks2022Method, password: `${profile.shadowsocksServerKey}:${profile.shadowsocksUserKey}` }] },
+      streamSettings: { network: "ws", security: profile.tlsEnabled ? "tls" : "none", tlsSettings: profile.tlsEnabled ? { serverName: profile.serverAddress, allowInsecure: false } : undefined, wsSettings: { path: normaliseWsPath(profile.shadowsocksWsPath), headers: { Host: profile.serverAddress } } },
+    }],
+  }, null, 2);
+}
+
 export function buildSocksClientConfig(profile: VlessProfile) {
   return JSON.stringify({
     log: { loglevel: "warning" },
@@ -186,11 +221,13 @@ function profileForClient(profile: VlessProfile, client: GatewayClient): VlessPr
     trojanPassword: client.trojanPassword,
     socksUsername: client.socksUsername,
     socksPassword: client.socksPassword,
+    shadowsocksUserKey: client.shadowsocksUserKey,
     subscriptionToken: client.subscriptionToken,
     wsPath: paths.vless,
     vmessWsPath: paths.vmess,
     trojanWsPath: paths.trojan,
     socksWsPath: paths.socks,
+    shadowsocksWsPath: paths.shadowsocks,
   };
 }
 
@@ -202,6 +239,8 @@ export function buildClientConnectionDetails(profile: VlessProfile, client: Gate
     vmessUri: buildVmessUri(clientProfile),
     trojanUri: buildTrojanUri(clientProfile),
     socksClientConfig: buildSocksClientConfig(clientProfile),
+    shadowsocksUri: buildShadowsocksUri(clientProfile),
+    shadowsocksClientConfig: buildShadowsocksClientConfig(clientProfile),
   };
 }
 
@@ -214,15 +253,17 @@ export function buildGatewayConnectionDetails(profile: VlessProfile) {
     vmessUri: buildVmessUri(publicProfile),
     trojanUri: buildTrojanUri(publicProfile),
     socksClientConfig: buildSocksClientConfig(publicProfile),
+    shadowsocksUri: buildShadowsocksUri(publicProfile),
+    shadowsocksClientConfig: buildShadowsocksClientConfig(publicProfile),
   };
 }
 
 export function buildClientSubscriptionPayload(profile: VlessProfile, client: GatewayClient) {
   const details = buildClientConnectionDetails(profile, client);
-  return Buffer.from([details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
+  return Buffer.from([details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri, details.shadowsocksUri].join("\n"), "utf8").toString("base64");
 }
 
-export type TrafficProtocol = "vless" | "vmess" | "trojan";
+export type TrafficProtocol = "vless" | "vmess" | "trojan" | "shadowsocks";
 
 export function clientTrafficEmail(clientId: number, protocol: TrafficProtocol = "vless") {
   return `gateway-client-${clientId}-${protocol}@local.invalid`;
@@ -238,7 +279,7 @@ export function clientSocksInboundPort(internalPort: number, clientId: number) {
 
 export function buildSubscriptionPayload(profile: VlessProfile) {
   const details = buildGatewayConnectionDetails(profile);
-  return Buffer.from([details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri].join("\n"), "utf8").toString("base64");
+  return Buffer.from([details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri, details.shadowsocksUri].join("\n"), "utf8").toString("base64");
 }
 
 export function internalInboundForPath(profile: VlessProfile, internalBasePort: number, path: string) {
@@ -248,6 +289,7 @@ export function internalInboundForPath(profile: VlessProfile, internalBasePort: 
     { path: normaliseWsPath(profile.vmessWsPath), port: internalBasePort + 1 },
     { path: normaliseWsPath(profile.trojanWsPath), port: internalBasePort + 2 },
     { path: normaliseWsPath(profile.socksWsPath), port: internalBasePort + 3 },
+    { path: resolvedShadowsocksWsPath(profile), port: internalBasePort + 5 },
   ];
   return mapping.find(candidate => candidate.path === normalizedPath)?.port;
 }
@@ -259,6 +301,7 @@ export function resolvePublicGatewayRoute(profile: VlessProfile, internalBasePor
     { protocol: "vmess", internalPath: normaliseWsPath(profile.vmessWsPath), port: internalBasePort + 1 },
     { protocol: "trojan", internalPath: normaliseWsPath(profile.trojanWsPath), port: internalBasePort + 2 },
     { protocol: "socks", internalPath: normaliseWsPath(profile.socksWsPath), port: internalBasePort + 3 },
+    { protocol: "shadowsocks", internalPath: resolvedShadowsocksWsPath(profile), port: internalBasePort + 5 },
   ];
   const gatewayPaths = gatewayWebSocketPaths(profile);
   for (const mapping of mappings) {
@@ -368,6 +411,22 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
           decryption: "none",
         },
         streamSettings: xhttpStreamSettings,
+      },
+      {
+        tag: "shadowsocks-in",
+        listen: "127.0.0.1",
+        port: internalPort + 5,
+        protocol: "shadowsocks",
+        settings: {
+          network: "tcp",
+          method: shadowsocks2022Method,
+          password: profile.shadowsocksServerKey,
+          users: [
+            ...(globalClientEnabled ? [{ password: profile.shadowsocksUserKey, level: 0 }] : []),
+            ...activeClients.map(client => ({ password: client.shadowsocksUserKey, email: clientTrafficEmail(client.id, "shadowsocks"), level: 0 })),
+          ],
+        },
+        streamSettings: streamSettings(resolvedShadowsocksWsPath(profile)),
       },
       ...activeClients.map(client => ({
         tag: clientSocksInboundTag(client.id),
