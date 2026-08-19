@@ -170,3 +170,7 @@
 - [x] Review the supplied refresh reference: keep the refresh icon in the right-side client-count and display-control cluster without changing the registry header hierarchy.
 - [x] Visually verify the manual refresh control in the full client-registry header at desktop width.
 - [x] Show the speed policy—Unlimited or the configured Mbps value—in the far-right compact-card summary instead of unlimited-data state.
+- [x] Make the Templates desktop policy-editor Save changes action span the full editor width.
+- [x] Rework the Recovery desktop page header into a clear left-aligned title and supporting description hierarchy.
+- [x] In compact client cards, show remaining percentage above finite quota bars and show the speed policy beneath the quota area.
+- [x] Visually verify the Templates, Recovery, and Clients & routes pages after the three layout corrections.
