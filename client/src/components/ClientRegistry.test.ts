@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientActivationState, clientDeleteDialogCopy, clientResetUsageDialogCopy } from "./ClientRegistry";
+import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy } from "./ClientRegistry";
 
 describe("client activation state presentation", () => {
   it("shows a disabled Activating control while a new client is waiting for activation", () => {
@@ -24,5 +24,12 @@ describe("client activation state presentation", () => {
       description: "This sets the recorded data usage to 0 and establishes a fresh accounting baseline. Credentials, subscription access, and every policy limit remain unchanged.",
       action: "Reset usage",
     });
+  });
+
+  it("maps finite quota usage to a compact remaining-capacity bar without overflow", () => {
+    expect(clientQuotaProgress(100, 25)).toMatchObject({ remainingBytes: 75, remainingPercent: 75, usedPercent: 25, toneClass: "bg-primary" });
+    expect(clientQuotaProgress(100, 95)).toMatchObject({ remainingPercent: 5, usedPercent: 95, toneClass: "bg-destructive" });
+    expect(clientQuotaProgress(100, 120)).toMatchObject({ remainingBytes: 0, remainingPercent: 0, usedPercent: 100 });
+    expect(clientQuotaProgress(-1, 500)).toBeNull();
   });
 });

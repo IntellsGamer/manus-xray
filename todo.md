@@ -159,3 +159,6 @@
 - [x] Create a no-op version marker for the explicitly requested republish without behavior changes.
 - [x] Ensure each client emits the delayed activation success notification exactly once despite repeated background polling.
 - [x] Visually verify the Clients & routes page remains stable after the activation notification polling change.
+- [x] Add a compact per-client remaining-quota progress bar in the client-card header, visually aligned with the existing status and action controls.
+- [x] Review the supplied quota reference: use a single restrained horizontal header bar above the metric grid, preserve compact card height, and keep finite-quota progress legible at a glance.
+- [x] Visually verify the finite-quota header bar at desktop and mobile widths, including exhausted and unlimited client states.

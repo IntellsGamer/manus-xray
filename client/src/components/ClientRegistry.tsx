@@ -88,6 +88,15 @@ function dayStatus(expiresAt: Date | string | null, dayLimit: number) {
   return { title: `${Math.ceil(remainingMs / 86_400_000)} days left`, detail: `Expires ${new Date(expiresAt).toLocaleDateString()}` };
 }
 
+export function clientQuotaProgress(trafficLimitBytes: number, trafficUsedBytes: number) {
+  if (trafficLimitBytes < 0) return null;
+  const remainingBytes = Math.max(0, trafficLimitBytes - Math.max(0, trafficUsedBytes));
+  const remainingPercent = trafficLimitBytes > 0 ? Math.round((remainingBytes / trafficLimitBytes) * 100) : 0;
+  const usedPercent = 100 - remainingPercent;
+  const toneClass = remainingPercent <= 10 ? "bg-destructive" : remainingPercent <= 25 ? "bg-amber-500" : "bg-primary";
+  return { remainingBytes, remainingPercent, usedPercent, toneClass };
+}
+
 export function clientActivationState(client: Pick<ClientRecord, "enabled" | "activationPending" | "activationFailed" | "quotaExhaustedAt">) {
   if (client.activationPending) return { label: "Activating", detail: "Credentials saved; Xray refresh is in progress", className: "border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-300", action: "Activating", actionDisabled: true, retry: false };
   if (client.activationFailed) return { label: "Failed", detail: "Xray activation did not complete", className: "border-destructive/35 bg-destructive/10 text-destructive", action: "Activate", actionDisabled: false, retry: true };
@@ -131,14 +140,16 @@ export function ClientRegistry({ clients, pending, onToggle, onActivate, onRotat
       const quotaDetail = client.trafficLimitBytes < 0
         ? { title: "Unlimited", detail: `${formatBytes(client.trafficUsedBytes)} used` }
         : { title: `${formatBytes(client.trafficUsedBytes)} / ${formatBytes(client.trafficLimitBytes)}`, detail: `${formatBytes(client.remainingTrafficBytes || 0)} remaining` };
+      const quotaProgress = clientQuotaProgress(client.trafficLimitBytes, client.trafficUsedBytes);
       const speedDetail = client.speedLimitMbps < 0 ? { title: "Unlimited", detail: "No throughput cap" } : { title: `${client.speedLimitMbps} Mbps`, detail: "Shared across this identity" };
       const connectionDetail = client.connectionLimit < 0 ? { title: "Unlimited", detail: "No source-IP cap" } : { title: `${client.connectionLimit} sources`, detail: "Unique source IPs across protocols" };
       const status = clientActivationState(client);
 
       return <article key={client.id} className="overflow-hidden rounded-xl border border-border bg-card/45 shadow-sm">
-        <div className="flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="grid gap-3 p-5 sm:p-6 md:grid-cols-[minmax(10rem,auto)_minmax(13rem,1fr)_auto] md:items-center md:gap-5">
           <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-lg font-semibold">{client.name}</h3><Badge variant="outline" className={status.className}>{status.label}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{client.activationPending || client.activationFailed ? status.detail : `Created ${new Date(client.createdAt).toLocaleDateString()}`}</p></div>
-          <div className="flex shrink-0 items-center gap-2">
+          {quotaProgress ? <div className="min-w-0 md:px-1"><div className="mb-1.5 flex items-center justify-between gap-3 text-[11px] font-medium"><span className="text-muted-foreground">Data remaining</span><span className="shrink-0 tabular-nums text-foreground">{quotaProgress.remainingPercent}% remaining</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`Data quota: ${quotaProgress.remainingPercent}% remaining`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={quotaProgress.remainingPercent}><div className={`h-full rounded-full transition-[width] duration-300 ${quotaProgress.toneClass}`} style={{ width: `${quotaProgress.usedPercent}%` }} /></div></div> : <div className="hidden md:block" />}
+          <div className="flex shrink-0 items-center gap-2 md:justify-self-end">
             <Button size="sm" variant={client.enabled ? "outline" : "default"} onClick={() => status.retry ? onActivate(client.id) : onToggle(client.id, !client.enabled)} disabled={pending || status.actionDisabled}><Power className="mr-1.5 h-3.5 w-3.5" />{status.action}</Button>
             <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="outline" aria-label={`More actions for ${client.name}`}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuLabel>Client actions</DropdownMenuLabel><DropdownMenuItem onSelect={() => onCopy(subscriptionUrl)}><Copy className="mr-2 h-4 w-4" />Copy subscription</DropdownMenuItem><DropdownMenuItem onSelect={() => onRotate(client.id)}><KeyRound className="mr-2 h-4 w-4" />Rotate credentials</DropdownMenuItem><DropdownMenuItem onSelect={() => setResetCandidate({ id: client.id, name: client.name })}><RotateCcw className="mr-2 h-4 w-4" />Reset usage</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteCandidate({ id: client.id, name: client.name })}><Trash2 className="mr-2 h-4 w-4" />Delete permanently</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
           </div>
