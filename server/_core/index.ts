@@ -35,6 +35,26 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+const pause = (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds));
+
+async function applyStoredXrayProfileAtStartup() {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      const profile = await getVlessProfile();
+      if (profile) {
+        await applyXrayProfile(profile);
+        return true;
+      }
+      console.warn(`[Xray] No stored profile on startup attempt ${attempt}; retrying.`);
+    } catch (error) {
+      console.error(`[Xray] Startup attempt ${attempt} could not apply the stored profile:`, error);
+    }
+    if (attempt < 5) await pause(attempt * 500);
+  }
+  console.error("[Xray] Private runtime did not start after five profile lookup attempts.");
+  return false;
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
@@ -64,13 +84,7 @@ async function startServer() {
 
   if (process.env.XRAY_RUNTIME_ENABLED === "true") {
     registerVlessUpgradeProxy(server);
-    try {
-      const profile = await getVlessProfile();
-      if (profile) await applyXrayProfile(profile);
-      else console.warn("[Xray] No stored VLESS profile exists; runtime start deferred until profile creation.");
-    } catch (error) {
-      console.error("[Xray] Stored profile could not be applied during startup:", error);
-    }
+    await applyStoredXrayProfileAtStartup();
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
