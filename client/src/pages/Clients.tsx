@@ -8,9 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { claimClientActivationNotification } from "@/lib/clientActivationNotifications";
 import { takeClientDraftPrefill } from "@/lib/clientPrefill";
+import { readClientRegistryView, saveClientRegistryView, type ClientRegistryView } from "@/lib/clientRegistryView";
 import { clientNotifications } from "@/lib/clientNotifications";
 import { trpc } from "@/lib/trpc";
-import { LayoutTemplate, Network, Plus, Route, Users } from "lucide-react";
+import { LayoutTemplate, List, Network, Plus, Route, Rows3, Users } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -48,6 +49,7 @@ export function ClientManagerContent() {
   const [speedLimitMbps, setSpeedLimitMbps] = useState("-1");
   const [connectionLimit, setConnectionLimit] = useState("-1");
   const [selectedTemplateId, setSelectedTemplateId] = useState("none");
+  const [clientRegistryView, setClientRegistryView] = useState<ClientRegistryView>(() => readClientRegistryView());
   const [paths, setPaths] = useState({ wsPath: "/vless", vmessWsPath: "/vmess", trojanWsPath: "/trojan", socksWsPath: "/socks", globalProfileEnabled: true });
   const [savedGlobalProfileEnabled, setSavedGlobalProfileEnabled] = useState(true);
   const activationTimerIds = useRef(new Map<number, number>());
@@ -138,6 +140,7 @@ export function ClientManagerContent() {
     setConnectionLimit(String(template.connectionLimit));
     toast.success(`Applied ${template.name} — review and create manually`);
   };
+  const setRegistryView = (view: ClientRegistryView) => { setClientRegistryView(view); saveClientRegistryView(view); };
 
   if (loadingProfile || loadingClients || !profile) return <ClientsLoading />;
   return <div className="protocol-shell min-h-full"><div className="mx-auto max-w-6xl space-y-5 py-2 sm:py-5">
@@ -147,7 +150,7 @@ export function ClientManagerContent() {
 
     <section className="protocol-panel p-5 sm:p-6"><div className="flex items-center gap-3"><Route className="h-5 w-5 text-primary" /><div><p className="protocol-overline">Transport paths</p><h2 className="mt-1 text-lg font-semibold">Independent protocol routes</h2></div></div><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{([['VLESS', 'wsPath'], ['VMess', 'vmessWsPath'], ['Trojan', 'trojanWsPath'], ['SOCKS5', 'socksWsPath']] as const).map(([label, key]) => <div key={key} className="space-y-2"><Label>{label} path</Label><Input value={paths[key]} onChange={event => setPaths(current => ({ ...current, [key]: event.target.value }))} className="protocol-input font-mono" /></div>)}</div><div className="mt-5 flex justify-end"><Button onClick={() => updatePaths.mutate(paths)} disabled={updatePaths.isPending}>Save routes</Button></div></section>
 
-    <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="protocol-overline">Named identities</p><h2 className="mt-1 text-lg font-semibold">Client lifecycle & policy registry</h2><p className="mt-1 text-sm text-muted-foreground">Quota values update in real time from payload bytes crossing each route-identified gateway tunnel.</p></div><div className="rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">{clients?.filter(client => client.enabled).length || 0} enabled · {clients?.length || 0} total</div></div><ClientRegistry clients={clients || []} pending={activate.isPending || toggle.isPending || rotate.isPending || resetUsage.isPending || deleteClient.isPending || updatePolicy.isPending} onToggle={(id, enabled) => toggle.mutate({ id, enabled })} onActivate={id => activate.mutate({ id, force: true })} onRotate={id => rotate.mutate({ id })} onResetUsage={id => resetUsage.mutate({ id })} onDelete={id => deleteClient.mutate({ id })} onCopy={value => copy(value, "Subscription URL")} onSavePolicy={(id, trafficLimitBytes, policyDayLimit, policySpeedLimitMbps, policyConnectionLimit) => updatePolicy.mutate({ id, trafficLimitBytes, dayLimit: policyDayLimit, speedLimitMbps: policySpeedLimitMbps, connectionLimit: policyConnectionLimit })} /></section>
+    <section className="space-y-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="protocol-overline">Named identities</p><h2 className="mt-1 text-lg font-semibold">Client lifecycle & policy registry</h2><p className="mt-1 text-sm text-muted-foreground">Quota values update in real time from payload bytes crossing each route-identified gateway tunnel.</p></div><div className="flex items-center gap-2"><div className="rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">{clients?.filter(client => client.enabled).length || 0} enabled · {clients?.length || 0} total</div><div className="flex rounded-md border border-border bg-card p-0.5" aria-label="Client display mode"><Button type="button" size="icon" variant={clientRegistryView === "detailed" ? "secondary" : "ghost"} className="h-7 w-7" aria-label="Detailed client cards" title="Detailed cards" onClick={() => setRegistryView("detailed")}><Rows3 className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant={clientRegistryView === "compact" ? "secondary" : "ghost"} className="h-7 w-7" aria-label="Compact client cards" title="Compact cards" onClick={() => setRegistryView("compact")}><List className="h-3.5 w-3.5" /></Button></div></div></div><ClientRegistry clients={clients || []} viewMode={clientRegistryView} pending={activate.isPending || toggle.isPending || rotate.isPending || resetUsage.isPending || deleteClient.isPending || updatePolicy.isPending} onToggle={(id, enabled) => toggle.mutate({ id, enabled })} onActivate={id => activate.mutate({ id, force: true })} onRotate={id => rotate.mutate({ id })} onResetUsage={id => resetUsage.mutate({ id })} onDelete={id => deleteClient.mutate({ id })} onCopy={value => copy(value, "Subscription URL")} onSavePolicy={(id, trafficLimitBytes, policyDayLimit, policySpeedLimitMbps, policyConnectionLimit) => updatePolicy.mutate({ id, trafficLimitBytes, dayLimit: policyDayLimit, speedLimitMbps: policySpeedLimitMbps, connectionLimit: policyConnectionLimit })} /></section>
   </div></div>;
 }
 

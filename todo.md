@@ -162,3 +162,6 @@
 - [x] Add a compact per-client remaining-quota progress bar in the client-card header, visually aligned with the existing status and action controls.
 - [x] Review the supplied quota reference: use a single restrained horizontal header bar above the metric grid, preserve compact card height, and keep finite-quota progress legible at a glance.
 - [x] Visually verify the finite-quota header bar at desktop and mobile widths, including exhausted and unlimited client states.
+- [x] Animate client quota value and progress-bar updates using restrained motion that respects reduced-motion preferences.
+- [x] Add a persistent detailed/compact client-registry display toggle, with the existing cards as the default and a concise expiry-plus-quota compact view.
+- [x] Visually verify the detailed registry mode and display-mode toggle at desktop and mobile widths after the layout refactor.
