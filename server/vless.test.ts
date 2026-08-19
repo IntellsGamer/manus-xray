@@ -83,7 +83,7 @@ describe("VLESS profile serialization", () => {
     expect(config.inbounds[0]?.streamSettings.wsSettings.path).toBe("/vless");
     expect(config.inbounds).toHaveLength(5);
     expect(config.inbounds.map(inbound => inbound.port)).toEqual([10000, 10001, 10002, 10003, 10004]);
-    expect(config.inbounds[4]).toMatchObject({ port: 10004, streamSettings: { network: "xhttp", xhttpSettings: { path: "/xhttp", mode: "packet-up", headers: { "User-Agent": "firefox" }, xPaddingBytes: "100-1000", scMaxBufferedPosts: 30, scStreamUpServerSecs: "20-80" } } });
+    expect(config.inbounds[4]).toMatchObject({ port: 10004, streamSettings: { network: "xhttp", xhttpSettings: { path: "/xhttp", mode: "auto", headers: { "User-Agent": "firefox" }, xPaddingBytes: "100-1000", scMaxBufferedPosts: 30, scStreamUpServerSecs: "20-80" } } });
   });
 
   it("serializes VMess, Trojan, and SOCKS5 imports with their isolated transport paths", () => {

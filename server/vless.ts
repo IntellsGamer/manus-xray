@@ -293,7 +293,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
   const xhttpStreamSettings: Record<string, unknown> = {
     network: "xhttp",
     security: "none",
-    xhttpSettings: { path: "/xhttp", mode: "packet-up", ...xhttpExtraSettings },
+    xhttpSettings: { path: "/xhttp", mode: "auto", ...xhttpExtraSettings },
   };
 
   const activeClients = clients.filter(client => client.enabled && (!client.expiresAt || client.expiresAt.getTime() > Date.now()));
