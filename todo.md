@@ -165,3 +165,4 @@
 - [x] Animate client quota value and progress-bar updates using restrained motion that respects reduced-motion preferences.
 - [x] Add a persistent detailed/compact client-registry display toggle, with the existing cards as the default and a concise expiry-plus-quota compact view.
 - [x] Visually verify the detailed registry mode and display-mode toggle at desktop and mobile widths after the layout refactor.
+- [x] Add a per-client expand/collapse control in compact mode that temporarily renders only the selected client in detailed form.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy } from "./ClientRegistry";
+import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy, nextExpandedCompactClientId } from "./ClientRegistry";
 
 describe("client activation state presentation", () => {
   it("shows a disabled Activating control while a new client is waiting for activation", () => {
@@ -31,5 +31,11 @@ describe("client activation state presentation", () => {
     expect(clientQuotaProgress(100, 95)).toMatchObject({ remainingPercent: 5, usedPercent: 95, toneClass: "bg-destructive" });
     expect(clientQuotaProgress(100, 120)).toMatchObject({ remainingBytes: 0, remainingPercent: 0, usedPercent: 100 });
     expect(clientQuotaProgress(-1, 500)).toBeNull();
+  });
+
+  it("allows only one compact client card to be expanded at a time", () => {
+    expect(nextExpandedCompactClientId(null, 7)).toBe(7);
+    expect(nextExpandedCompactClientId(7, 8)).toBe(8);
+    expect(nextExpandedCompactClientId(8, 8)).toBeNull();
   });
 });
