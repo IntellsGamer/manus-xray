@@ -305,7 +305,7 @@ describe("VLESS WebSocket upgrade bridge", () => {
     expect(activeGatewaySourceCountForClient(namedClient.id)).toBe(1);
     const rejected = await upgrade(bridgePort, "/vmess/shared-connection-cap-route", secondSource);
     expect(rejected.error).toBeInstanceOf(Error);
-    expect(applyProfile).toHaveBeenCalledTimes(2);
+    expect(applyProfile).not.toHaveBeenCalled();
 
     first.destroy();
     sameSource.destroy();
@@ -332,7 +332,7 @@ describe("VLESS WebSocket upgrade bridge", () => {
     expect(enforceQuota).toHaveBeenCalledWith(profile);
   });
 
-  it("forwards the configured path to loopback and preserves the upgrade response", async () => {
+  it("forwards the configured path to loopback without reapplying the Xray profile", async () => {
     const upstream = createTcpServer(socket => {
       socket.once("data", requestBytes => {
         expect(requestBytes.toString()).toContain("GET /vless HTTP/1.1");
@@ -351,7 +351,7 @@ describe("VLESS WebSocket upgrade bridge", () => {
     const bridgePort = await listen(bridge);
 
     await expect(upgrade(bridgePort, `/vless/${profile.subscriptionToken}`)).resolves.toMatchObject({ statusCode: 101 });
-    expect(applyProfile).toHaveBeenCalledWith(profile);
+    expect(applyProfile).not.toHaveBeenCalled();
   });
 
   it("rejects a non-matching upgrade path before applying or contacting Xray", async () => {

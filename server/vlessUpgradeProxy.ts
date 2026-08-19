@@ -4,7 +4,7 @@ import { Transform, type Duplex } from "stream";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
 import { resolvePublicGatewayRoute } from "./vless";
-import { applyXrayProfile, enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
+import { enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
 import { reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
 
 type UpgradeDependencies = {
@@ -206,12 +206,6 @@ async function bridgeUpgrade(
     return;
   }
   await dependencies.enforceQuota(profile);
-  try {
-    await dependencies.applyProfile(profile);
-  } catch (error) {
-    releaseConnectionReservation?.();
-    throw error;
-  }
   const upstream = net.createConnection({ host: "127.0.0.1", port: route.port });
   const connectTimeout = setTimeout(() => {
     releaseConnectionReservation?.();
@@ -253,7 +247,7 @@ export function registerVlessUpgradeProxy(server: Server, overrides: UpgradeDepe
   const dependencies: Required<UpgradeDependencies> = {
     getProfile: overrides.getProfile ?? getVlessProfile,
     getClients: overrides.getClients ?? listGatewayClients,
-    applyProfile: overrides.applyProfile ?? applyXrayProfile,
+    applyProfile: overrides.applyProfile ?? (async () => undefined),
     internalPort: overrides.internalPort ?? xrayInternalPort,
     recordTraffic: overrides.recordTraffic ?? recordGatewayClientTunnelTraffic,
     enforceQuota: overrides.enforceQuota ?? enforceGatewayTrafficQuotas,

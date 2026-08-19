@@ -5,7 +5,7 @@ import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic }
 import { reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
 import { clientXhttpPath, gatewayXhttpPath } from "./vless";
 import { createSpeedLimitTransform, createTunnelUsageFlusher, gatewaySourceIdentity, limiterForGatewayClient } from "./vlessUpgradeProxy";
-import { applyXrayProfile, enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
+import { enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
 
 export type XhttpRoute = { internalPath: string; client?: GatewayClient };
 
@@ -95,7 +95,6 @@ export function registerXhttpProxy(app: Express) {
         return;
       }
       await enforceGatewayTrafficQuotas(profile);
-      await applyXrayProfile(profile);
       forwardXhttp(req, res, profile, route, releaseReservation);
     } catch (error) {
       next(error);

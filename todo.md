@@ -178,3 +178,5 @@
 - [x] Add a muted used-versus-limit data detail beneath the compact finite-quota label while retaining the remaining percentage, quota bar, and speed summary.
 - [x] Switch global and named-client VLESS/XHTTP from packet-up to stream-up, apply the requested XHTTP extras, and retain vless:// subscription serialization.
 - [x] Move the desktop Create client action to the far-right policy-control area while preserving the stacked mobile form flow.
+- [ ] Diagnose and repair the reported named-client VLESS/XHTTP stream-up connection failure with an end-to-end Xray client validation.
+- [ ] Remove Xray apply/reload calls from per-request WebSocket and XHTTP tunnel handling; retain reloads only for actual configuration changes and policy enforcement.
