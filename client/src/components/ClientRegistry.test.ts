@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientActivationState, clientDeleteDialogCopy } from "./ClientRegistry";
+import { clientActivationState, clientDeleteDialogCopy, clientResetUsageDialogCopy } from "./ClientRegistry";
 
 describe("client activation state presentation", () => {
   it("shows a disabled Activating control while a new client is waiting for activation", () => {
@@ -15,6 +15,14 @@ describe("client activation state presentation", () => {
       title: "Permanently delete Example client?",
       description: "This removes the client identity, all protocol credentials, its subscription token, and recorded delivery history. This cannot be undone.",
       action: "Delete permanently",
+    });
+  });
+
+  it("uses an explicit non-destructive reset confirmation that preserves access and policies", () => {
+    expect(clientResetUsageDialogCopy("Example client")).toEqual({
+      title: "Reset usage for Example client?",
+      description: "This sets the recorded data usage to 0 and establishes a fresh accounting baseline. Credentials, subscription access, and every policy limit remain unchanged.",
+      action: "Reset usage",
     });
   });
 });

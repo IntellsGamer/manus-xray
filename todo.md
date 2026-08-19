@@ -153,3 +153,6 @@
 - [x] Assess a constrained, owner-only diagnostics-console alternative; do not expose unrestricted backend shell access through the web panel.
 - [x] Visually verify the Templates page, Recovery export/file-import UI, Devices autofill action, and Clients template selector in the shared admin shell.
 - [x] Replace the native named-client permanent-delete confirmation with the shared styled alert dialog used by policy-template deletion.
+- [x] Replace the named-client Reset usage browser prompt with the shared styled confirmation dialog.
+- [x] Repair the local node-pty native-module build so the development preview starts while preserving the working production build path.
+- [x] Verify the restored local preview starts and the Clients & routes page renders normally after node-pty compiles locally.
