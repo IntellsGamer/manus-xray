@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy, nextExpandedCompactClientId } from "./ClientRegistry";
+import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy, compactSpeedPolicy, nextExpandedCompactClientId } from "./ClientRegistry";
 
 describe("client activation state presentation", () => {
   it("shows a disabled Activating control while a new client is waiting for activation", () => {
@@ -37,5 +37,10 @@ describe("client activation state presentation", () => {
     expect(nextExpandedCompactClientId(null, 7)).toBe(7);
     expect(nextExpandedCompactClientId(7, 8)).toBe(8);
     expect(nextExpandedCompactClientId(8, 8)).toBeNull();
+  });
+
+  it("uses the speed policy as the compact-card right-edge summary", () => {
+    expect(compactSpeedPolicy(-1)).toBe("Unlimited");
+    expect(compactSpeedPolicy(64)).toBe("64 Mbps");
   });
 });

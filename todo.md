@@ -169,3 +169,4 @@
 - [x] Add a compact manual refresh action immediately beside the client registry detailed/compact display controls.
 - [x] Review the supplied refresh reference: keep the refresh icon in the right-side client-count and display-control cluster without changing the registry header hierarchy.
 - [x] Visually verify the manual refresh control in the full client-registry header at desktop width.
+- [x] Show the speed policy—Unlimited or the configured Mbps value—in the far-right compact-card summary instead of unlimited-data state.
