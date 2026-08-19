@@ -52,6 +52,7 @@ function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route:
     Object.entries(upstreamResponse.headers).forEach(([name, value]) => {
       if (value !== undefined) res.setHeader(name, value);
     });
+    res.flushHeaders();
     if (route.client) {
       trackGatewayTunnel(res, upstreamResponse, route.client.id, gatewaySourceIdentity(req), releaseReservation);
       upstreamResponse.on("data", chunk => { void meter?.observe(Buffer.byteLength(chunk)); });
@@ -63,6 +64,7 @@ function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route:
     const downstream = createSpeedLimitTransform(limiter);
     upstreamResponse.pipe(downstream).pipe(res);
   });
+  upstream.flushHeaders();
   upstream.once("error", () => {
     releaseReservation?.();
     void meter?.flush(true);

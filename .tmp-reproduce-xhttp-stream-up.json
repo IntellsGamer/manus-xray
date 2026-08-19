@@ -1,13 +1,7 @@
 {
   "log": { "loglevel": "debug" },
   "inbounds": [
-    {
-      "tag": "local-socks",
-      "listen": "127.0.0.1",
-      "port": 10881,
-      "protocol": "socks",
-      "settings": { "udp": false }
-    }
+    { "tag": "local-socks", "listen": "127.0.0.1", "port": 10881, "protocol": "socks", "settings": { "udp": false } }
   ],
   "outbounds": [
     {
@@ -15,23 +9,13 @@
       "protocol": "vless",
       "settings": {
         "vnext": [
-          {
-            "address": "nginxadmin-kw4zek2d.manus.space",
-            "port": 443,
-            "users": [
-              { "id": "9b27a4cf-a0a1-4f69-a249-ab2e9b9f8f7f", "encryption": "none" }
-            ]
-          }
+          { "address": "nginxadmin-kw4zek2d.manus.space", "port": 443, "users": [ { "id": "9b27a4cf-a0a1-4f69-a249-ab2e9b9f8f7f", "encryption": "none" } ] }
         ]
       },
       "streamSettings": {
         "network": "xhttp",
         "security": "tls",
-        "tlsSettings": {
-          "serverName": "nginxadmin-kw4zek2d.manus.space",
-          "fingerprint": "chrome",
-          "alpn": ["h2"]
-        },
+        "tlsSettings": { "serverName": "nginxadmin-kw4zek2d.manus.space", "fingerprint": "chrome", "alpn": ["h2"] },
         "xhttpSettings": {
           "path": "/xhttp/c8fYI-piacMn468c4A2-aH63DPxDXlEE",
           "host": "nginxadmin-kw4zek2d.manus.space",
@@ -44,9 +28,5 @@
       }
     }
   ],
-  "routing": {
-    "rules": [
-      { "type": "field", "inboundTag": ["local-socks"], "outboundTag": "reported-xhttp" }
-    ]
-  }
+  "routing": { "rules": [ { "type": "field", "inboundTag": ["local-socks"], "outboundTag": "reported-xhttp" } ] }
 }

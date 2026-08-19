@@ -180,3 +180,4 @@
 - [x] Move the desktop Create client action to the far-right policy-control area while preserving the stacked mobile form flow.
 - [ ] Diagnose and repair the reported named-client VLESS/XHTTP stream-up connection failure with an end-to-end Xray client validation.
 - [ ] Remove Xray apply/reload calls from per-request WebSocket and XHTTP tunnel handling; retain reloads only for actual configuration changes and policy enforcement.
+- [ ] Flush XHTTP upstream request and downstream response headers before piping bodies so HTTP/2 stream-up traffic is not buffered by the gateway.
