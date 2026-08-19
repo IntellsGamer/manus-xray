@@ -156,3 +156,4 @@
 - [x] Replace the named-client Reset usage browser prompt with the shared styled confirmation dialog.
 - [x] Repair the local node-pty native-module build so the development preview starts while preserving the working production build path.
 - [x] Verify the restored local preview starts and the Clients & routes page renders normally after node-pty compiles locally.
+- [x] Create a no-op version marker for the explicitly requested republish without behavior changes.
