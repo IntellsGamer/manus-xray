@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { privateXhttpPath, resolvePublicXhttpRoute } from "./xhttpProxy";
+import { privateXhttpPath, resolvePublicXhttpRoute, rewritePublicXhttpReferer } from "./xhttpProxy";
 
 const profile = { subscriptionToken: "opaque_global_token", globalProfileEnabled: true } as VlessProfile;
 const namedClient = { id: 17, connectionToken: "opaque_client_token", enabled: true, expiresAt: null } as GatewayClient;
@@ -14,6 +14,11 @@ describe("global XHTTP proxy routing", () => {
   it("rejects missing and mismatched opaque route tokens", () => {
     expect(privateXhttpPath(profile, "/xhttp/another-token/session-123")).toBeUndefined();
     expect(privateXhttpPath(undefined, "/xhttp/opaque_global_token/session-123")).toBeUndefined();
+  });
+
+  it("rewrites a packet-up Referer to the private XHTTP path while preserving its origin and query", () => {
+    expect(rewritePublicXhttpReferer("https://gateway.example/xhttp/opaque_global_token/?x_padding=abc", "/xhttp/opaque_global_token")).toBe("https://gateway.example/xhttp/?x_padding=abc");
+    expect(rewritePublicXhttpReferer("https://gateway.example/other", "/xhttp/opaque_global_token")).toBe("https://gateway.example/other");
   });
 });
 

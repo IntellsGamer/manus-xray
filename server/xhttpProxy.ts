@@ -32,6 +32,18 @@ export function resolvePublicXhttpRoute(profile: VlessProfile, clients: GatewayC
   return undefined;
 }
 
+/** Rewrites Xray packet-up's opaque public Referer to the private XHTTP base. */
+export function rewritePublicXhttpReferer(referer: string | undefined, publicPrefix: string) {
+  if (!referer) return referer;
+  try {
+    const externalUrl = new URL(referer);
+    const internalPath = rewritePublicXhttpPath(publicPrefix, `${externalUrl.pathname}${externalUrl.search}`);
+    return internalPath ? new URL(internalPath, externalUrl).toString() : referer;
+  } catch {
+    return referer;
+  }
+}
+
 /** Compatibility helper retained for the global XHTTP route regression. */
 export function privateXhttpPath(profile: Awaited<ReturnType<typeof getVlessProfile>>, originalUrl: string) {
   return profile ? resolvePublicXhttpRoute(profile, [], originalUrl)?.internalPath : undefined;
@@ -40,6 +52,9 @@ export function privateXhttpPath(profile: Awaited<ReturnType<typeof getVlessProf
 function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route: XhttpRoute, releaseReservation?: () => void) {
   const headers = { ...req.headers, host: `127.0.0.1:${xrayInternalPort()}` };
   delete headers.connection;
+  if (typeof headers.referer === "string") {
+    headers.referer = rewritePublicXhttpReferer(headers.referer, route.client ? clientXhttpPath(route.client) : gatewayXhttpPath(profile));
+  }
   const meter = route.client ? createTunnelUsageFlusher({
     clientId: route.client.id,
     profile,
