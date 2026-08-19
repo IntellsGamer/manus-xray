@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy, compactClientActionContainerClass, compactClientCardGridClass, compactExpansionButtonClass, compactQuotaUsageText, compactSpeedPolicy, compactSpeedToneClass, expandableClientActionsClass, nextExpandedCompactClientId } from "./ClientRegistry";
+import { clientActivationState, clientDeleteDialogCopy, clientQuotaProgress, clientResetUsageDialogCopy, compactClientActionContainerClass, compactClientCardGridClass, compactExpansionButtonClass, compactQuotaUsageText, compactSpeedPolicy, compactSpeedToneClass, compactUnlimitedExpiryDetail, detailedClientActionContainerClass, detailedClientCardGridClass, expandableClientActionsClass, nextExpandedCompactClientId } from "./ClientRegistry";
 
 describe("client activation state presentation", () => {
   it("shows a disabled Activating control while a new client is waiting for activation", () => {
@@ -53,5 +53,16 @@ describe("client activation state presentation", () => {
     expect(compactClientActionContainerClass).toBe("w-full lg:w-auto lg:justify-self-end");
     expect(expandableClientActionsClass).toBe("flex w-full items-center gap-2 lg:w-auto");
     expect(compactExpansionButtonClass).toBe("ml-auto h-9 w-9 lg:ml-0");
+  });
+
+  it("stacks detailed card controls after the identity and available quota area at constrained widths", () => {
+    expect(detailedClientCardGridClass).toContain("lg:grid-cols-");
+    expect(detailedClientCardGridClass).not.toContain("md:grid-cols-");
+    expect(detailedClientActionContainerClass).toBe("w-full lg:col-start-3 lg:w-auto lg:justify-self-end");
+  });
+
+  it("uses the exact unlimited compact validity copy requested", () => {
+    expect(compactUnlimitedExpiryDetail(-1)).toBe("Expires never");
+    expect(compactUnlimitedExpiryDetail(30)).toBeUndefined();
   });
 });

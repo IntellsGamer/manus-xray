@@ -191,3 +191,5 @@
 - [x] Await user confirmation that the published deployment is ready before any further production-domain Shadowsocks test.
 - [x] Ensure unlimited speed (`-1`) bypasses every limiter lookup, token-bucket reservation, delay, and throttle path across WebSocket and XHTTP tunnels.
 - [x] Refine compact client-card actions at tablet and mobile widths: use the action-row width cleanly and place the expand/collapse control at the far right.
+- [x] Move detailed client-card actions below the header content at constrained widths and render unlimited compact validity as “Expires never.”
+- [x] Superseded: render unlimited compact validity as “Never expires”; the requested final wording is “Expires never.”
