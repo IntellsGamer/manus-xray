@@ -177,3 +177,4 @@
 - [x] Replace the compact-card Speed text label with an end-aligned speed icon and policy value below the quota area; render unlimited muted grey and finite Mbps in high-contrast white.
 - [x] Add a muted used-versus-limit data detail beneath the compact finite-quota label while retaining the remaining percentage, quota bar, and speed summary.
 - [x] Switch global and named-client VLESS/XHTTP from packet-up to stream-up, apply the requested XHTTP extras, and retain vless:// subscription serialization.
+- [x] Move the desktop Create client action to the far-right policy-control area while preserving the stacked mobile form flow.

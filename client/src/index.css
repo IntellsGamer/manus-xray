@@ -123,7 +123,8 @@
   @media (min-width: 1024px) {
     section:has(#storage-limit) { grid-template-columns: minmax(0, 1fr) !important; }
     form:has(#storage-limit) { grid-template-columns: minmax(17rem, 1.6fr) repeat(3, minmax(11rem, 1fr)) !important; }
-    form:has(#storage-limit) > :first-child, form:has(#storage-limit) > :last-child { grid-column: span 4 / span 4 !important; }
+    form:has(#storage-limit) > :first-child { grid-column: span 4 / span 4 !important; }
+    form:has(#storage-limit) > :last-child { grid-column: 4 / span 1 !important; align-self: end; justify-self: end; }
     form:has(#storage-limit) > :nth-child(2), form:has(#storage-limit) > :nth-child(3), form:has(#storage-limit) > :nth-child(4), form:has(#storage-limit) > :nth-child(5) { grid-column: auto / span 1 !important; }
   }
   @media (max-width: 640px) { .protocol-header { align-items: start; flex-direction: column; } }
