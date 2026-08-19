@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { claimClientActivationNotification } from "@/lib/clientActivationNotifications";
 import { takeClientDraftPrefill } from "@/lib/clientPrefill";
 import { clientNotifications } from "@/lib/clientNotifications";
 import { trpc } from "@/lib/trpc";
 import { LayoutTemplate, Network, Plus, Route, Users } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 function copy(value: string, label: string) {
@@ -49,6 +50,8 @@ export function ClientManagerContent() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("none");
   const [paths, setPaths] = useState({ wsPath: "/vless", vmessWsPath: "/vmess", trojanWsPath: "/trojan", socksWsPath: "/socks", globalProfileEnabled: true });
   const [savedGlobalProfileEnabled, setSavedGlobalProfileEnabled] = useState(true);
+  const activationTimerIds = useRef(new Map<number, number>());
+  const notifiedActivationClientIds = useRef(new Set<number>());
 
   useEffect(() => {
     if (!profile) return;
@@ -66,19 +69,37 @@ export function ClientManagerContent() {
   const refresh = () => { utils.vless.get.invalidate(); utils.vless.clients.invalidate(); };
   const activate = trpc.vless.activateClient.useMutation({
     onSuccess: result => {
-      if (result.activationPending) return;
+      activationTimerIds.current.delete(result.id);
+      if (result.activationPending) { refresh(); return; }
       if (result.activationFailed) { toast.error("Client activation failed"); refresh(); return; }
-      toast.success(clientNotifications.activated);
+      if (claimClientActivationNotification(notifiedActivationClientIds.current, result)) toast.success(clientNotifications.activated);
       refresh();
     },
-    onError: error => toast.error(`Client is saved; Xray activation will retry automatically. ${error.message}`),
+    onError: (error, variables) => { activationTimerIds.current.delete(variables.id); toast.error(`Client is saved; Xray activation will retry automatically. ${error.message}`); refresh(); },
   });
   useEffect(() => {
-    const timers = (clients || [])
-      .filter(client => client.activationPending && client.activationDueAt)
-      .map(client => window.setTimeout(() => activate.mutate({ id: client.id, force: false }), Math.max(250, new Date(client.activationDueAt!).getTime() - Date.now() + 250)));
-    return () => timers.forEach(window.clearTimeout);
-  }, [activate, clients]);
+    const pendingClients = (clients || []).filter(client => client.activationPending && client.activationDueAt);
+    const pendingClientIds = new Set(pendingClients.map(client => client.id));
+    for (const [clientId, timerId] of Array.from(activationTimerIds.current.entries())) {
+      if (!pendingClientIds.has(clientId)) {
+        window.clearTimeout(timerId);
+        activationTimerIds.current.delete(clientId);
+      }
+    }
+    for (const client of pendingClients) {
+      if (activationTimerIds.current.has(client.id)) continue;
+      const delay = Math.max(250, new Date(client.activationDueAt!).getTime() - Date.now() + 250);
+      const timerId = window.setTimeout(() => {
+        activationTimerIds.current.delete(client.id);
+        activate.mutate({ id: client.id, force: false });
+      }, delay);
+      activationTimerIds.current.set(client.id, timerId);
+    }
+  }, [activate.mutate, clients]);
+  useEffect(() => () => {
+    for (const timerId of Array.from(activationTimerIds.current.values())) window.clearTimeout(timerId);
+    activationTimerIds.current.clear();
+  }, []);
 
   const clearDraft = () => { setName(""); setTrafficLimit("-1"); setTrafficUnit("GB"); setDayLimit("-1"); setSpeedLimitMbps("-1"); setConnectionLimit("-1"); setSelectedTemplateId("none"); };
   const create = trpc.vless.createClient.useMutation({

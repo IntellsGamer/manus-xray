@@ -157,3 +157,5 @@
 - [x] Repair the local node-pty native-module build so the development preview starts while preserving the working production build path.
 - [x] Verify the restored local preview starts and the Clients & routes page renders normally after node-pty compiles locally.
 - [x] Create a no-op version marker for the explicitly requested republish without behavior changes.
+- [x] Ensure each client emits the delayed activation success notification exactly once despite repeated background polling.
+- [x] Visually verify the Clients & routes page remains stable after the activation notification polling change.
