@@ -48,13 +48,17 @@ export function LiveControlContent() {
     onSuccess: result => toast.success(`Disconnect requested for ${result.requested} tunnel${result.requested === 1 ? "" : "s"}`),
     onError: error => toast.error(error.message),
   });
+  const unblockGroup = trpc.vless.unblockLiveSessionGroup.useMutation({
+    onSuccess: () => toast.success("Reconnect block removed"),
+    onError: error => toast.error(error.message),
+  });
   const updatePolicy = trpc.vless.updateClientPolicy.useMutation({
     onSuccess: () => { toast.success("Client protocol policy saved"); utils.vless.clients.invalidate(); },
     onError: error => toast.error(error.message),
   });
 
   if (loadingClients || loadingGroups || !clients) return <LiveControlLoading />;
-  return <LiveSessionsPanel clients={clients} groups={groups} streamConnected={connected} pending={disconnectGroup.isPending || updatePolicy.isPending} onDisconnectGroup={(group, blockSeconds) => disconnectGroup.mutate({ clientId: group.clientId, sourceGroup: group.sourceGroup, blockSeconds })} onSaveAllowedProtocols={(clientId, allowedProtocols) => {
+  return <LiveSessionsPanel clients={clients} groups={groups} streamConnected={connected} pending={disconnectGroup.isPending || unblockGroup.isPending || updatePolicy.isPending} onDisconnectGroup={(group, blockSeconds) => disconnectGroup.mutate({ clientId: group.clientId, sourceGroup: group.sourceGroup, blockSeconds })} onUnblockGroup={group => unblockGroup.mutate({ clientId: group.clientId, sourceGroup: group.sourceGroup })} onSaveAllowedProtocols={(clientId, allowedProtocols) => {
     const client = clients.find(item => item.id === clientId);
     if (!client) return;
     updatePolicy.mutate({ id: client.id, trafficLimitBytes: client.trafficLimitBytes, dayLimit: client.dayLimit, speedLimitMbps: client.speedLimitMbps, connectionLimit: client.connectionLimit, allowedProtocols: allowedProtocols as ClientProtocol[] });

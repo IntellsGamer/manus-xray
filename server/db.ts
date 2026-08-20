@@ -791,6 +791,15 @@ export async function requestGatewayLiveSessionGroupDisconnect(input: { clientId
   return { requested: sessions.length, blockedUntil };
 }
 
+export async function clearGatewayLiveSessionGroupReconnectBlock(input: { clientId: number; sourceGroup: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.delete(gatewayReconnectBlocks).where(and(
+    eq(gatewayReconnectBlocks.clientId, input.clientId),
+    eq(gatewayReconnectBlocks.sourceGroup, input.sourceGroup),
+  ));
+}
+
 export async function closeGatewayLiveSession(input: { id: string; uplinkBytes: number; downlinkBytes: number; reason: "closed" | "disconnected" }) {
   const db = await getDb();
   if (!db) return undefined;

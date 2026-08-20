@@ -3,6 +3,7 @@ import type { TrpcContext } from "./_core/context";
 
 const mocks = vi.hoisted(() => ({
   activateGatewayClientIfDue: vi.fn(),
+  clearGatewayLiveSessionGroupReconnectBlock: vi.fn(),
   ensureVlessProfile: vi.fn(),
   createGatewayClient: vi.fn(),
   deleteGatewayClient: vi.fn(),
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./db", () => ({
   activateGatewayClientIfDue: mocks.activateGatewayClientIfDue,
+  clearGatewayLiveSessionGroupReconnectBlock: mocks.clearGatewayLiveSessionGroupReconnectBlock,
   createGatewayClient: mocks.createGatewayClient,
   deleteGatewayClient: mocks.deleteGatewayClient,
   ensureVlessProfile: mocks.ensureVlessProfile,
@@ -139,6 +141,7 @@ describe("client lifecycle mutations", () => {
     mocks.getGatewayLiveSessionById.mockResolvedValue({ id: "ce1b6a8a-0000-4000-8000-000000000009", closedAt: null });
     mocks.requestGatewayLiveSessionDisconnect.mockResolvedValue(undefined);
     mocks.requestGatewayLiveSessionGroupDisconnect.mockResolvedValue({ requested: 2 });
+    mocks.clearGatewayLiveSessionGroupReconnectBlock.mockResolvedValue(undefined);
     mocks.updateGatewayClientPolicy.mockResolvedValue({
       ...storedClient,
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
@@ -285,5 +288,14 @@ describe("client lifecycle mutations", () => {
     await expect(caller.liveSessionGroups()).resolves.toEqual([group]);
     await expect(caller.disconnectLiveSessionGroup({ clientId: group.clientId, sourceGroup: group.sourceGroup, blockSeconds: 300 })).resolves.toEqual({ requested: 2 });
     expect(mocks.requestGatewayLiveSessionGroupDisconnect).toHaveBeenCalledWith({ clientId: group.clientId, sourceGroup: group.sourceGroup, blockSeconds: 300 });
+  });
+
+  it("removes the global reconnect block for a client and source network", async () => {
+    const caller = vlessRouter.createCaller(adminContext());
+    const input = { clientId: storedClient.id, sourceGroup: "198.51.100.0/24" };
+
+    await expect(caller.unblockLiveSessionGroup(input)).resolves.toEqual({ success: true });
+
+    expect(mocks.clearGatewayLiveSessionGroupReconnectBlock).toHaveBeenCalledWith(input);
   });
 });
