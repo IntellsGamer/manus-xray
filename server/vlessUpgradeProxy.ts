@@ -14,7 +14,7 @@ type UpgradeDependencies = {
   internalPort?: () => number;
   recordTraffic?: (clientId: number, bytes: number) => Promise<Pick<GatewayClient, "trafficLimitBytes" | "trafficUsedBytes">>;
   enforceQuota?: (profile: VlessProfile) => Promise<unknown>;
-  getReconnectBlock?: (input: { clientId: number; protocol: string; sourceGroup: string }) => Promise<{ blockedUntil: Date } | undefined>;
+  getReconnectBlock?: (input: { clientId: number; sourceGroup: string }) => Promise<{ blockedUntil: Date } | undefined>;
 };
 
 export class ClientSpeedLimiter {
@@ -244,7 +244,7 @@ async function bridgeUpgrade(
   }
   const sourceIdentity = gatewaySourceIdentity(req);
   if (route.client) {
-    const block = await dependencies.getReconnectBlock({ clientId: route.client.id, protocol: route.protocol, sourceGroup: sourceIdentity });
+    const block = await dependencies.getReconnectBlock({ clientId: route.client.id, sourceGroup: sourceIdentity });
     if (block) {
       socket.destroy();
       return;

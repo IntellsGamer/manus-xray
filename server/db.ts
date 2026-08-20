@@ -658,7 +658,7 @@ export async function listActiveGatewayLiveSessions(clientId?: number): Promise<
 
 export type GatewayLiveSessionGroup = {
   clientId: number;
-  protocol: string;
+  protocols: string[];
   sourceGroup: string;
   sessionIds: string[];
   tunnelCount: number;
@@ -672,10 +672,11 @@ export type GatewayLiveSessionGroup = {
 export function groupGatewayLiveSessions(sessions: GatewayLiveSession[]): GatewayLiveSessionGroup[] {
   const groups = new Map<string, GatewayLiveSessionGroup>();
   for (const session of sessions) {
-    const key = `${session.clientId}\u0000${session.protocol}\u0000${session.sourceGroup}`;
+    const key = `${session.clientId}\u0000${session.sourceGroup}`;
     const existing = groups.get(key);
     if (existing) {
       existing.sessionIds.push(session.id);
+      if (!existing.protocols.includes(session.protocol)) existing.protocols.push(session.protocol);
       existing.tunnelCount += 1;
       existing.uplinkBytes += Number(session.uplinkBytes);
       existing.downlinkBytes += Number(session.downlinkBytes);
@@ -685,7 +686,7 @@ export function groupGatewayLiveSessions(sessions: GatewayLiveSession[]): Gatewa
     }
     groups.set(key, {
       clientId: session.clientId,
-      protocol: session.protocol,
+      protocols: [session.protocol],
       sourceGroup: session.sourceGroup,
       sessionIds: [session.id],
       tunnelCount: 1,
@@ -705,24 +706,23 @@ export async function listActiveGatewayReconnectBlocks(): Promise<GatewayReconne
   return db.select().from(gatewayReconnectBlocks).where(gt(gatewayReconnectBlocks.blockedUntil, new Date()));
 }
 
-export async function getGatewayReconnectBlock(input: { clientId: number; protocol: string; sourceGroup: string }) {
+export async function getGatewayReconnectBlock(input: { clientId: number; sourceGroup: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   const result = await db.select().from(gatewayReconnectBlocks).where(and(
     eq(gatewayReconnectBlocks.clientId, input.clientId),
-    eq(gatewayReconnectBlocks.protocol, input.protocol),
     eq(gatewayReconnectBlocks.sourceGroup, input.sourceGroup),
     gt(gatewayReconnectBlocks.blockedUntil, new Date()),
-  )).limit(1);
+  )).orderBy(desc(gatewayReconnectBlocks.blockedUntil)).limit(1);
   return result[0];
 }
 
 export async function listGatewayLiveSessionGroups() {
   const [sessions, blocks] = await Promise.all([listActiveGatewayLiveSessions(), listActiveGatewayReconnectBlocks()]);
   const groups = groupGatewayLiveSessions(sessions);
-  const groupByKey = new Map(groups.map(group => [`${group.clientId}\u0000${group.protocol}\u0000${group.sourceGroup}`, group]));
+  const groupByKey = new Map(groups.map(group => [`${group.clientId}\u0000${group.sourceGroup}`, group]));
   for (const block of blocks) {
-    const key = `${block.clientId}\u0000${block.protocol}\u0000${block.sourceGroup}`;
+    const key = `${block.clientId}\u0000${block.sourceGroup}`;
     const existing = groupByKey.get(key);
     if (existing) {
       existing.blockedUntil = block.blockedUntil;
@@ -730,7 +730,7 @@ export async function listGatewayLiveSessionGroups() {
     }
     const blockedGroup: GatewayLiveSessionGroup = {
       clientId: block.clientId,
-      protocol: block.protocol,
+      protocols: [],
       sourceGroup: block.sourceGroup,
       sessionIds: [],
       tunnelCount: 0,
@@ -765,20 +765,23 @@ export async function requestGatewayLiveSessionDisconnect(id: string) {
   return getGatewayLiveSessionById(id);
 }
 
-export async function requestGatewayLiveSessionGroupDisconnect(input: { clientId: number; protocol: string; sourceGroup: string; blockSeconds: number }) {
+export async function requestGatewayLiveSessionGroupDisconnect(input: { clientId: number; sourceGroup: string; blockSeconds: number }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   const safeBlockSeconds = Math.max(5, Math.min(86_400, Math.floor(input.blockSeconds)));
   const blockedUntil = new Date(Date.now() + safeBlockSeconds * 1_000);
+  await db.delete(gatewayReconnectBlocks).where(and(
+    eq(gatewayReconnectBlocks.clientId, input.clientId),
+    eq(gatewayReconnectBlocks.sourceGroup, input.sourceGroup),
+  ));
   await db.insert(gatewayReconnectBlocks).values({
     clientId: input.clientId,
-    protocol: input.protocol,
+    protocol: "all",
     sourceGroup: input.sourceGroup,
     blockedUntil,
   }).onDuplicateKeyUpdate({ set: { blockedUntil } });
   const sessions = await db.select({ id: gatewayLiveSessions.id }).from(gatewayLiveSessions).where(and(
     eq(gatewayLiveSessions.clientId, input.clientId),
-    eq(gatewayLiveSessions.protocol, input.protocol),
     eq(gatewayLiveSessions.sourceGroup, input.sourceGroup),
     isNull(gatewayLiveSessions.closedAt),
   ));

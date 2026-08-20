@@ -165,7 +165,7 @@ export const vlessRouter = router({
     await requestGatewayLiveSessionDisconnect(input.id);
     return { success: true } as const;
   }),
-  disconnectLiveSessionGroup: adminProcedure.input(z.object({ clientId: z.number().int().positive(), protocol: z.string().min(1).max(24), sourceGroup: z.string().min(1).max(96), blockSeconds: z.number().int().min(5).max(86_400).default(60) })).mutation(async ({ input }) => {
+  disconnectLiveSessionGroup: adminProcedure.input(z.object({ clientId: z.number().int().positive(), sourceGroup: z.string().min(1).max(96), blockSeconds: z.number().int().min(5).max(86_400).default(60) })).mutation(async ({ input }) => {
     const result = await requestGatewayLiveSessionGroupDisconnect(input);
     if (!result.requested) throw new TRPCError({ code: "NOT_FOUND", message: "Active VPN session group was not found" });
     return result;

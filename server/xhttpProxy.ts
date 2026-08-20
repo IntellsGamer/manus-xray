@@ -134,7 +134,7 @@ export function registerXhttpProxy(app: Express) {
       }
       const sourceIdentity = gatewaySourceIdentity(req);
       if (route.client) {
-        const block = await getGatewayReconnectBlock({ clientId: route.client.id, protocol: "xhttp", sourceGroup: sourceIdentity });
+        const block = await getGatewayReconnectBlock({ clientId: route.client.id, sourceGroup: sourceIdentity });
         if (block) {
           const seconds = Math.max(1, Math.ceil((block.blockedUntil.getTime() - Date.now()) / 1_000));
           res.setHeader("Retry-After", String(seconds));

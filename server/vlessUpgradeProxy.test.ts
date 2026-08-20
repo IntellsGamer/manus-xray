@@ -565,7 +565,7 @@ describe("VLESS WebSocket upgrade bridge", () => {
     const rejected = await upgrade(bridgePort, "/vless/blocked-route", { "cf-connecting-ip": "198.51.100.77" });
 
     expect(rejected.error).toBeInstanceOf(Error);
-    expect(getReconnectBlock).toHaveBeenCalledWith({ clientId: namedClient.id, protocol: "vless", sourceGroup: "198.51.100.77" });
+    expect(getReconnectBlock).toHaveBeenCalledWith({ clientId: namedClient.id, sourceGroup: "198.51.100.77" });
     expect(upstreamConnection).not.toHaveBeenCalled();
   });
 

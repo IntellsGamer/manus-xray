@@ -54,7 +54,7 @@ export function LiveControlContent() {
   });
 
   if (loadingClients || loadingGroups || !clients) return <LiveControlLoading />;
-  return <LiveSessionsPanel clients={clients} groups={groups} streamConnected={connected} pending={disconnectGroup.isPending || updatePolicy.isPending} onDisconnectGroup={(group, blockSeconds) => disconnectGroup.mutate({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup, blockSeconds })} onSaveAllowedProtocols={(clientId, allowedProtocols) => {
+  return <LiveSessionsPanel clients={clients} groups={groups} streamConnected={connected} pending={disconnectGroup.isPending || updatePolicy.isPending} onDisconnectGroup={(group, blockSeconds) => disconnectGroup.mutate({ clientId: group.clientId, sourceGroup: group.sourceGroup, blockSeconds })} onSaveAllowedProtocols={(clientId, allowedProtocols) => {
     const client = clients.find(item => item.id === clientId);
     if (!client) return;
     updatePolicy.mutate({ id: client.id, trafficLimitBytes: client.trafficLimitBytes, dayLimit: client.dayLimit, speedLimitMbps: client.speedLimitMbps, connectionLimit: client.connectionLimit, allowedProtocols: allowedProtocols as ClientProtocol[] });

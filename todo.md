@@ -211,3 +211,5 @@
 - [x] Replace live-session polling with an owner-authenticated server-sent event stream.
 - [x] Add a configurable Live control reconnect-block duration that closes a grouped session and rejects matching client, source-network, and protocol reconnections until expiry.
 - [x] Keep disconnected groups visible as a muted “Xs remaining” countdown row until the configurable reconnect block expires, then remove the row.
+- [x] Investigate and fix the reported 500 error when refreshing the admin interface after disconnecting a grouped VPN session. Determined to be a transient deployment restart condition rather than an application-code defect.
+- [x] Make grouped disconnect and temporary reconnect blocks apply to every protocol for the same client and source network, with one global countdown row.

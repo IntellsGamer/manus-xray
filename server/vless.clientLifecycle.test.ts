@@ -278,12 +278,12 @@ describe("client lifecycle mutations", () => {
   });
 
   it("lists grouped sessions and requests disconnects for every matching parallel tunnel", async () => {
-    const group = { clientId: storedClient.id, protocol: "vless", sourceGroup: "198.51.100.0/24", tunnelCount: 7, uplinkBytes: 120, downlinkBytes: 340 };
+    const group = { clientId: storedClient.id, protocols: ["vless", "xhttp"], sourceGroup: "198.51.100.0/24", tunnelCount: 7, uplinkBytes: 120, downlinkBytes: 340 };
     mocks.listGatewayLiveSessionGroups.mockResolvedValue([group]);
     const caller = vlessRouter.createCaller(adminContext());
 
     await expect(caller.liveSessionGroups()).resolves.toEqual([group]);
-    await expect(caller.disconnectLiveSessionGroup({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup, blockSeconds: 300 })).resolves.toEqual({ requested: 2 });
-    expect(mocks.requestGatewayLiveSessionGroupDisconnect).toHaveBeenCalledWith({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup, blockSeconds: 300 });
+    await expect(caller.disconnectLiveSessionGroup({ clientId: group.clientId, sourceGroup: group.sourceGroup, blockSeconds: 300 })).resolves.toEqual({ requested: 2 });
+    expect(mocks.requestGatewayLiveSessionGroupDisconnect).toHaveBeenCalledWith({ clientId: group.clientId, sourceGroup: group.sourceGroup, blockSeconds: 300 });
   });
 });
