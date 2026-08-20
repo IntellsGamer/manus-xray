@@ -214,3 +214,5 @@
 - [x] Investigate and fix the reported 500 error when refreshing the admin interface after disconnecting a grouped VPN session. Determined to be a transient deployment restart condition rather than an application-code defect.
 - [x] Make grouped disconnect and temporary reconnect blocks apply to every protocol for the same client and source network, with one global countdown row.
 - [x] Add an owner-only Live control action to immediately remove the global reconnect block for a client and source-network group.
+- [x] Add a live per-group Mbps counter to Live control using the grouped tunnel byte updates.
+- [x] Render the live Mbps value inside the existing session-detail line beside connected duration and total transferred data, not in a separate panel.
