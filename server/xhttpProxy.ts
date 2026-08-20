@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { request as requestHttp } from "http";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
+import { getGatewayReconnectBlock, getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
 import { observeGatewayTunnelTraffic, reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
 import { clientAllowsProtocol, clientXhttpPath, gatewayXhttpPath } from "./vless";
 import { ClientSpeedLimiter, createSpeedLimitTransform, createTunnelUsageFlusher, gatewaySourceIdentity, limiterForGatewayClient } from "./vlessUpgradeProxy";
@@ -133,6 +133,15 @@ export function registerXhttpProxy(app: Express) {
         return;
       }
       const sourceIdentity = gatewaySourceIdentity(req);
+      if (route.client) {
+        const block = await getGatewayReconnectBlock({ clientId: route.client.id, protocol: "xhttp", sourceGroup: sourceIdentity });
+        if (block) {
+          const seconds = Math.max(1, Math.ceil((block.blockedUntil.getTime() - Date.now()) / 1_000));
+          res.setHeader("Retry-After", String(seconds));
+          res.status(429).type("text/plain").send(`Reconnect blocked for ${seconds}s`);
+          return;
+        }
+      }
       const releaseReservation = route.client ? reserveGatewayClientSource(route.client.id, sourceIdentity, route.client.connectionLimit ?? -1) : undefined;
       if (route.client && !releaseReservation) {
         res.status(429).type("text/plain").send("Connection limit reached");

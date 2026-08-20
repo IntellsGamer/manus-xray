@@ -209,3 +209,5 @@
 - [x] Move live VPN sessions and per-client protocol policies from Clients & routes into a dedicated sidebar page.
 - [x] Aggregate Cloudflare parallel tunnels by client, source network, and protocol with summed transfer totals and a grouped disconnect action.
 - [x] Replace live-session polling with an owner-authenticated server-sent event stream.
+- [x] Add a configurable Live control reconnect-block duration that closes a grouped session and rejects matching client, source-network, and protocol reconnections until expiry.
+- [x] Keep disconnected groups visible as a muted “Xs remaining” countdown row until the configurable reconnect block expires, then remove the row.

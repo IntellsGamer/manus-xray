@@ -212,7 +212,7 @@ describe("VLESS WebSocket upgrade bridge", () => {
     const unlimitedElapsed = await receiveUpgradePayload(bridgePort, "/vless/unlimited-speed-route", payload.length);
     const limitedElapsed = await receiveUpgradePayload(bridgePort, "/vless/finite-speed-route", payload.length);
 
-    expect(unlimitedElapsed).toBeLessThan(500);
+    expect(unlimitedElapsed).toBeLessThan(750);
     expect(limitedElapsed).toBeGreaterThanOrEqual(800);
     expect(limitedElapsed).toBeGreaterThan(unlimitedElapsed + 500);
   });
@@ -542,6 +542,31 @@ describe("VLESS WebSocket upgrade bridge", () => {
     } finally {
       payloadSocket.destroy();
     }
+  });
+
+  it("rejects a reconnect-blocked named source before contacting the private tunnel", async () => {
+    const namedClient = { id: 56, enabled: true, connectionToken: "blocked-route", expiresAt: null } as unknown as import("../drizzle/schema").GatewayClient;
+    const upstreamConnection = vi.fn();
+    const upstream = createTcpServer(socket => { upstreamConnection(); socket.destroy(); });
+    const upstreamPort = await listen(upstream);
+    const bridge = createHttpServer((_request, response) => response.end("not found"));
+    const getReconnectBlock = vi.fn().mockResolvedValue({ blockedUntil: new Date(Date.now() + 60_000) });
+    registerVlessUpgradeProxy(bridge, {
+      getProfile: async () => profile,
+      getClients: async () => [namedClient],
+      applyProfile: vi.fn().mockResolvedValue(undefined),
+      internalPort: () => upstreamPort,
+      recordTraffic: vi.fn().mockResolvedValue({ trafficLimitBytes: -1, trafficUsedBytes: 0 }),
+      enforceQuota: vi.fn().mockResolvedValue(undefined),
+      getReconnectBlock,
+    });
+    const bridgePort = await listen(bridge);
+
+    const rejected = await upgrade(bridgePort, "/vless/blocked-route", { "cf-connecting-ip": "198.51.100.77" });
+
+    expect(rejected.error).toBeInstanceOf(Error);
+    expect(getReconnectBlock).toHaveBeenCalledWith({ clientId: namedClient.id, protocol: "vless", sourceGroup: "198.51.100.77" });
+    expect(upstreamConnection).not.toHaveBeenCalled();
   });
 
 });

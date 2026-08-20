@@ -2,7 +2,7 @@ import type { IncomingMessage, Server } from "http";
 import net, { isIP, type Socket } from "net";
 import { Transform, type Duplex } from "stream";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
-import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
+import { getGatewayReconnectBlock, getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
 import { resolvePublicGatewayRoute } from "./vless";
 import { enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
 import { observeGatewayTunnelTraffic, reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
@@ -14,6 +14,7 @@ type UpgradeDependencies = {
   internalPort?: () => number;
   recordTraffic?: (clientId: number, bytes: number) => Promise<Pick<GatewayClient, "trafficLimitBytes" | "trafficUsedBytes">>;
   enforceQuota?: (profile: VlessProfile) => Promise<unknown>;
+  getReconnectBlock?: (input: { clientId: number; protocol: string; sourceGroup: string }) => Promise<{ blockedUntil: Date } | undefined>;
 };
 
 export class ClientSpeedLimiter {
@@ -242,6 +243,13 @@ async function bridgeUpgrade(
     return;
   }
   const sourceIdentity = gatewaySourceIdentity(req);
+  if (route.client) {
+    const block = await dependencies.getReconnectBlock({ clientId: route.client.id, protocol: route.protocol, sourceGroup: sourceIdentity });
+    if (block) {
+      socket.destroy();
+      return;
+    }
+  }
   const releaseConnectionReservation = route.client ? reserveGatewayClientSource(route.client.id, sourceIdentity, route.client.connectionLimit ?? -1) : undefined;
   if (route.client && !releaseConnectionReservation) {
     socket.destroy();
@@ -298,6 +306,7 @@ export function registerVlessUpgradeProxy(server: Server, overrides: UpgradeDepe
     internalPort: overrides.internalPort ?? xrayInternalPort,
     recordTraffic: overrides.recordTraffic ?? recordGatewayClientTunnelTraffic,
     enforceQuota: overrides.enforceQuota ?? enforceGatewayTrafficQuotas,
+    getReconnectBlock: overrides.getReconnectBlock ?? getGatewayReconnectBlock,
   };
 
   server.on("upgrade", (req, socket, head) => {

@@ -110,6 +110,22 @@ export const gatewayLiveSessions = mysqlTable("gateway_live_sessions", {
 
 export type GatewayLiveSession = typeof gatewayLiveSessions.$inferSelect;
 
+/** Temporary live-control blocks that prevent a client/source/protocol group from reconnecting until expiry. */
+export const gatewayReconnectBlocks = mysqlTable("gateway_reconnect_blocks", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  protocol: varchar("protocol", { length: 24 }).notNull(),
+  sourceGroup: varchar("sourceGroup", { length: 96 }).notNull(),
+  blockedUntil: timestamp("blockedUntil").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  uniqueIndex("gateway_reconnect_blocks_scope_unique").on(table.clientId, table.protocol, table.sourceGroup),
+  index("gateway_reconnect_blocks_active_idx").on(table.clientId, table.protocol, table.sourceGroup, table.blockedUntil),
+]);
+
+export type GatewayReconnectBlock = typeof gatewayReconnectBlocks.$inferSelect;
+
 /** Reusable client-policy presets. They never contain client credentials or usage. */
 export const clientPolicyTemplates = mysqlTable("client_policy_templates", {
   id: int("id").autoincrement().primaryKey(),

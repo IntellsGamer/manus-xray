@@ -283,7 +283,7 @@ describe("client lifecycle mutations", () => {
     const caller = vlessRouter.createCaller(adminContext());
 
     await expect(caller.liveSessionGroups()).resolves.toEqual([group]);
-    await expect(caller.disconnectLiveSessionGroup({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup })).resolves.toEqual({ requested: 2 });
-    expect(mocks.requestGatewayLiveSessionGroupDisconnect).toHaveBeenCalledWith({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup });
+    await expect(caller.disconnectLiveSessionGroup({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup, blockSeconds: 300 })).resolves.toEqual({ requested: 2 });
+    expect(mocks.requestGatewayLiveSessionGroupDisconnect).toHaveBeenCalledWith({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup, blockSeconds: 300 });
   });
 });
