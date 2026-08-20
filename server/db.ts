@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { ClientPolicyTemplate, clientPolicyTemplates, GatewayClient, GatewayLiveSession, gatewayLiveSessions, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, terminalLeases, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import type { OwnerDeviceObservation } from "./ownerDevices";
@@ -656,6 +656,51 @@ export async function listActiveGatewayLiveSessions(clientId?: number): Promise<
   return db.select().from(gatewayLiveSessions).where(predicate).orderBy(desc(gatewayLiveSessions.lastSeenAt));
 }
 
+export type GatewayLiveSessionGroup = {
+  clientId: number;
+  protocol: string;
+  sourceGroup: string;
+  sessionIds: string[];
+  tunnelCount: number;
+  uplinkBytes: number;
+  downlinkBytes: number;
+  startedAt: Date;
+  lastSeenAt: Date;
+};
+
+export function groupGatewayLiveSessions(sessions: GatewayLiveSession[]): GatewayLiveSessionGroup[] {
+  const groups = new Map<string, GatewayLiveSessionGroup>();
+  for (const session of sessions) {
+    const key = `${session.clientId}\u0000${session.protocol}\u0000${session.sourceGroup}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.sessionIds.push(session.id);
+      existing.tunnelCount += 1;
+      existing.uplinkBytes += Number(session.uplinkBytes);
+      existing.downlinkBytes += Number(session.downlinkBytes);
+      if (session.startedAt < existing.startedAt) existing.startedAt = session.startedAt;
+      if (session.lastSeenAt > existing.lastSeenAt) existing.lastSeenAt = session.lastSeenAt;
+      continue;
+    }
+    groups.set(key, {
+      clientId: session.clientId,
+      protocol: session.protocol,
+      sourceGroup: session.sourceGroup,
+      sessionIds: [session.id],
+      tunnelCount: 1,
+      uplinkBytes: Number(session.uplinkBytes),
+      downlinkBytes: Number(session.downlinkBytes),
+      startedAt: session.startedAt,
+      lastSeenAt: session.lastSeenAt,
+    });
+  }
+  return Array.from(groups.values()).sort((left, right) => right.lastSeenAt.getTime() - left.lastSeenAt.getTime());
+}
+
+export async function listGatewayLiveSessionGroups() {
+  return groupGatewayLiveSessions(await listActiveGatewayLiveSessions());
+}
+
 export async function heartbeatGatewayLiveSession(input: { id: string; uplinkBytes: number; downlinkBytes: number }) {
   const db = await getDb();
   if (!db) return undefined;
@@ -673,6 +718,21 @@ export async function requestGatewayLiveSessionDisconnect(id: string) {
   if (!db) throw new Error("Database is unavailable");
   await db.update(gatewayLiveSessions).set({ disconnectRequestedAt: new Date() }).where(and(eq(gatewayLiveSessions.id, id), isNull(gatewayLiveSessions.closedAt)));
   return getGatewayLiveSessionById(id);
+}
+
+export async function requestGatewayLiveSessionGroupDisconnect(input: { clientId: number; protocol: string; sourceGroup: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const sessions = await db.select({ id: gatewayLiveSessions.id }).from(gatewayLiveSessions).where(and(
+    eq(gatewayLiveSessions.clientId, input.clientId),
+    eq(gatewayLiveSessions.protocol, input.protocol),
+    eq(gatewayLiveSessions.sourceGroup, input.sourceGroup),
+    isNull(gatewayLiveSessions.closedAt),
+  ));
+  if (sessions.length) {
+    await db.update(gatewayLiveSessions).set({ disconnectRequestedAt: new Date() }).where(inArray(gatewayLiveSessions.id, sessions.map(session => session.id)));
+  }
+  return { requested: sessions.length };
 }
 
 export async function closeGatewayLiveSession(input: { id: string; uplinkBytes: number; downlinkBytes: number; reason: "closed" | "disconnected" }) {

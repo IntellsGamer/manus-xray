@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listGatewayClients: vi.fn(),
   listSubscriptionEventsForClient: vi.fn(),
   listActiveGatewayLiveSessions: vi.fn(),
+  listGatewayLiveSessionGroups: vi.fn(),
   getGatewayClientById: vi.fn(),
   getGatewayLiveSessionById: vi.fn(),
   markGatewayClientActivationFailed: vi.fn(),
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   rotateGatewayClientCredentials: vi.fn(),
   setGatewayClientEnabled: vi.fn(),
   requestGatewayLiveSessionDisconnect: vi.fn(),
+  requestGatewayLiveSessionGroupDisconnect: vi.fn(),
   updateGatewayPathsAndGlobalProfile: vi.fn(),
   updateGatewayClientPolicy: vi.fn(),
   updateVlessProfile: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock("./db", () => ({
   getGatewayClientById: mocks.getGatewayClientById,
   getGatewayLiveSessionById: mocks.getGatewayLiveSessionById,
   listActiveGatewayLiveSessions: mocks.listActiveGatewayLiveSessions,
+  listGatewayLiveSessionGroups: mocks.listGatewayLiveSessionGroups,
   listGatewayClients: mocks.listGatewayClients,
   listSubscriptionEventsForClient: mocks.listSubscriptionEventsForClient,
   markGatewayClientActivationFailed: mocks.markGatewayClientActivationFailed,
@@ -45,6 +48,7 @@ vi.mock("./db", () => ({
   rotateGatewayClientCredentials: mocks.rotateGatewayClientCredentials,
   setGatewayClientEnabled: mocks.setGatewayClientEnabled,
   requestGatewayLiveSessionDisconnect: mocks.requestGatewayLiveSessionDisconnect,
+  requestGatewayLiveSessionGroupDisconnect: mocks.requestGatewayLiveSessionGroupDisconnect,
   updateGatewayPathsAndGlobalProfile: mocks.updateGatewayPathsAndGlobalProfile,
   updateGatewayClientPolicy: mocks.updateGatewayClientPolicy,
   updateVlessProfile: mocks.updateVlessProfile,
@@ -131,8 +135,10 @@ describe("client lifecycle mutations", () => {
     mocks.ensureVlessProfile.mockResolvedValue(profile);
     mocks.getGatewayClientById.mockResolvedValue(storedClient);
     mocks.listActiveGatewayLiveSessions.mockResolvedValue([]);
+    mocks.listGatewayLiveSessionGroups.mockResolvedValue([]);
     mocks.getGatewayLiveSessionById.mockResolvedValue({ id: "ce1b6a8a-0000-4000-8000-000000000009", closedAt: null });
     mocks.requestGatewayLiveSessionDisconnect.mockResolvedValue(undefined);
+    mocks.requestGatewayLiveSessionGroupDisconnect.mockResolvedValue({ requested: 2 });
     mocks.updateGatewayClientPolicy.mockResolvedValue({
       ...storedClient,
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
@@ -269,5 +275,15 @@ describe("client lifecycle mutations", () => {
     await expect(caller.liveSessions()).resolves.toEqual([{ id: sessionId, clientId: storedClient.id, closedAt: null }]);
     await expect(caller.disconnectLiveSession({ id: sessionId })).resolves.toEqual({ success: true });
     expect(mocks.requestGatewayLiveSessionDisconnect).toHaveBeenCalledWith(sessionId);
+  });
+
+  it("lists grouped sessions and requests disconnects for every matching parallel tunnel", async () => {
+    const group = { clientId: storedClient.id, protocol: "vless", sourceGroup: "198.51.100.0/24", tunnelCount: 7, uplinkBytes: 120, downlinkBytes: 340 };
+    mocks.listGatewayLiveSessionGroups.mockResolvedValue([group]);
+    const caller = vlessRouter.createCaller(adminContext());
+
+    await expect(caller.liveSessionGroups()).resolves.toEqual([group]);
+    await expect(caller.disconnectLiveSessionGroup({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup })).resolves.toEqual({ requested: 2 });
+    expect(mocks.requestGatewayLiveSessionGroupDisconnect).toHaveBeenCalledWith({ clientId: group.clientId, protocol: group.protocol, sourceGroup: group.sourceGroup });
   });
 });

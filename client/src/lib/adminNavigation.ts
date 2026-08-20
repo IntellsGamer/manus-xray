@@ -1,6 +1,7 @@
 export const adminRoutes = {
   overview: "/admin",
   clients: "/admin/clients",
+  liveControl: "/admin/live",
   devices: "/admin/devices",
   templates: "/admin/templates",
   recovery: "/admin/recovery",

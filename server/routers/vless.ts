@@ -7,6 +7,7 @@ import {
   getGatewayClientById,
   getGatewayLiveSessionById,
   listActiveGatewayLiveSessions,
+  listGatewayLiveSessionGroups,
   listGatewayClients,
   listSubscriptionEventsForClient,
   markGatewayClientActivationFailed,
@@ -18,6 +19,7 @@ import {
   rotateGatewayClientCredentials,
   setGatewayClientEnabled,
   requestGatewayLiveSessionDisconnect,
+  requestGatewayLiveSessionGroupDisconnect,
   updateGatewayPathsAndGlobalProfile,
   updateGatewayClientPolicy,
   updateVlessProfile,
@@ -156,11 +158,17 @@ export const vlessRouter = router({
     })));
   }),
   liveSessions: adminProcedure.query(() => listActiveGatewayLiveSessions()),
+  liveSessionGroups: adminProcedure.query(() => listGatewayLiveSessionGroups()),
   disconnectLiveSession: adminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ input }) => {
     const session = await getGatewayLiveSessionById(input.id);
     if (!session || session.closedAt) throw new TRPCError({ code: "NOT_FOUND", message: "Live VPN session was not found" });
     await requestGatewayLiveSessionDisconnect(input.id);
     return { success: true } as const;
+  }),
+  disconnectLiveSessionGroup: adminProcedure.input(z.object({ clientId: z.number().int().positive(), protocol: z.string().min(1).max(24), sourceGroup: z.string().min(1).max(96) })).mutation(async ({ input }) => {
+    const result = await requestGatewayLiveSessionGroupDisconnect(input);
+    if (!result.requested) throw new TRPCError({ code: "NOT_FOUND", message: "Active VPN session group was not found" });
+    return result;
   }),
   createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1), speedLimitMbps: speedLimitInput.default(-1), connectionLimit: connectionLimitInput.default(-1), allowedProtocols: allowedProtocolsInput.default([...clientAllowedProtocolOrder]), creationRequestId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);

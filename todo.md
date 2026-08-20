@@ -206,3 +206,6 @@
 - [x] Completed discovery-only request: present the throughput findings and await approval; no implementation was approved.
 - [x] Add owner-visible live VPN sessions with source-network grouping, duration, transferred bytes, and individual cross-instance disconnect controls.
 - [x] Add enforceable per-client protocol allowlists across generated imports, subscriptions, public routes, and Xray runtime configuration.
+- [x] Move live VPN sessions and per-client protocol policies from Clients & routes into a dedicated sidebar page.
+- [x] Aggregate Cloudflare parallel tunnels by client, source network, and protocol with summed transfer totals and a grouped disconnect action.
+- [x] Replace live-session polling with an owner-authenticated server-sent event stream.

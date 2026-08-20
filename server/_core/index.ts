@@ -13,6 +13,7 @@ import { getVlessProfile } from "../db";
 import { applyXrayProfile, stopXrayRuntime } from "../xrayRuntime";
 import { registerVlessUpgradeProxy } from "../vlessUpgradeProxy";
 import { registerTerminalWebSocket } from "../terminal";
+import { registerLiveSessionEventRoute } from "../liveSessionEvents";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -67,6 +68,7 @@ async function startServer() {
   registerSubscriptionRoute(app);
   registerQuotaEnforcementRoute(app);
   registerXhttpProxy(app);
+  registerLiveSessionEventRoute(app);
   // tRPC API
   app.use(
     "/api/trpc",

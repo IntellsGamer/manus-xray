@@ -23,7 +23,7 @@ import {
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { adminRoutes } from "@/lib/adminNavigation";
-import { ArchiveRestore, Laptop, LayoutDashboard, LayoutTemplate, LogOut, PanelLeft, TerminalSquare, Users, type LucideIcon } from "lucide-react";
+import { ArchiveRestore, Laptop, LayoutDashboard, LayoutTemplate, LogOut, PanelLeft, Radio, TerminalSquare, Users, type LucideIcon } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -34,6 +34,7 @@ type SidebarMenuItem = { icon: LucideIcon; label: string; path: string };
 const menuItems: SidebarMenuItem[] = [
   { icon: LayoutDashboard, label: "Connection control", path: adminRoutes.overview },
   { icon: Users, label: "Clients & routes", path: adminRoutes.clients },
+  { icon: Radio, label: "Live control", path: adminRoutes.liveControl },
   { icon: Laptop, label: "Devices", path: adminRoutes.devices },
   { icon: LayoutTemplate, label: "Templates", path: adminRoutes.templates },
   { icon: ArchiveRestore, label: "Recovery", path: adminRoutes.recovery },

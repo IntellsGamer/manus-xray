@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Admin from "./pages/Admin";
 import Clients from "./pages/Clients";
+import LiveControl from "./pages/LiveControl";
 import Devices from "./pages/Devices";
 import Recovery from "./pages/Recovery";
 import Templates from "./pages/Templates";
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/admin" component={Admin} />
       <Route path="/admin/clients" component={Clients} />
+      <Route path="/admin/live" component={LiveControl} />
       <Route path="/admin/devices" component={Devices} />
       <Route path="/admin/templates" component={Templates} />
       <Route path="/admin/recovery" component={Recovery} />
