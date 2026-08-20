@@ -176,6 +176,12 @@ function shellWorkingDirectory() {
   return configured ? resolve(configured) : process.cwd();
 }
 
+export function terminalShellLaunch(runAsRoot = process.env.TERMINAL_AS_ROOT === "true") {
+  const bashArguments = ["--noprofile", "--norc", "-i"];
+  if (!runAsRoot) return { command: "/bin/bash", args: bashArguments };
+  return { command: "sudo", args: ["-n", "-H", "/bin/bash", ...bashArguments] };
+}
+
 function send(socket: WebSocket, frame: TerminalOutputFrame) {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame));
 }
@@ -228,7 +234,8 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
   };
 
   try {
-    ptyProcess = pty.spawn("/bin/bash", ["--noprofile", "--norc", "-i"], {
+    const shell = terminalShellLaunch();
+    ptyProcess = pty.spawn(shell.command, shell.args, {
       name: "xterm-256color",
       cols: 120,
       rows: 34,

@@ -1,29 +1,9 @@
 # Project TODO
 
-- [x] Inspect the current application shell, authentication, reverse-proxy controls, and deployment configuration.
-- [x] Add an owner-only Terminal sidebar entry and route, with no terminal UI rendered for other users.
-- [x] Implement an authenticated, single-session interactive terminal transport with explicit origin and owner checks.
-- [x] Spawn an isolated non-login shell with PTY semantics, terminal resize support, bounded I/O, and automatic cleanup.
-- [x] Build the responsive xterm-style client terminal with Shift+Ctrl+V / Shift+Ctrl+C extra controls, clipboard safety, reconnect, resize, and terminate actions.
-- [x] Add Vitest coverage for owner authorization and terminal session safeguards.
-- [x] Verify TypeScript, tests, development preview, desktop/mobile layout, and save a published checkpoint.
-- [x] Preserve the current Autoscale hosting mode and make the terminal safely reconnectable when a request-scoped session is closed.
-- [x] Add isolated tests for terminal lease exclusivity, authorization decisions, and cleanup behavior.
-- [x] Repair the production image so node-pty’s native binding is built and loadable at application startup.
-- [x] Validate the repaired deployment build and save a corrected published checkpoint.
-- [x] Verify the corrected published revision completes its live container startup check without a node-pty loading error.
-- [x] Compile node-pty directly in the Docker image rather than relying on the package manager’s blocked lifecycle script.
-- [x] Show the Terminal route and sidebar entry to every authenticated administrator without owner-device gating.
-- [x] Prevent terminal input/output feedback loops and repeated line rendering that can lag the browser.
-- [x] Verify the administrator terminal route and publish the corrected behavior.
-- [ ] Diagnose and fix the production Terminal WebSocket upgrade rejection.
-- [ ] Eliminate the remaining repeated terminal output/render loop and browser lag.
-- [ ] Verify the repaired production Terminal connection and publish the fix.
-- [ ] Inspect and repair the currently published Terminal route after the reported live failure.
-- [ ] Verify the published Terminal WebSocket from an authenticated browser session.
-- [ ] Trace and fix the immediate post-login Terminal WebSocket disconnect.
-- [ ] Wait five minutes for the current published terminal revision to settle before live verification.
-- [ ] Perform the requested post-rollout authenticated Terminal connection check.
-- [ ] Check the published authenticated Terminal connection immediately without further waiting.
-- [ ] Trace and fix the infinite terminal line-spam behavior without interrupting the pending deployment.
-- [ ] Publish the validated terminal output batching mitigation at the user’s request.
+- [x] No separate-host replacement is required after clarifying that the terminal must share the published application's Unix user.
+- [x] Run the terminal as the real user on the same actual machine that owns the target files.
+- [x] Verify that the terminal uses the same Unix user and working directory as the published application process.
+- [x] Clarified that the application must remain the app user; a whole-runtime root switch is not requested.
+- [x] Superseded the whole-runtime root validation after narrowing the requirement to the terminal only.
+- [x] Preserve the published application as the app user while launching only Terminal sessions as root.
+- [ ] Validate and publish the root-terminal-only execution path.

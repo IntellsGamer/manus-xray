@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "http";
-import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalAdministrator, isTerminalOriginAllowed, parseTerminalFrame, TerminalInputLimiter, TerminalOutputLimiter } from "./terminal";
+import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalAdministrator, isTerminalOriginAllowed, parseTerminalFrame, terminalShellLaunch, TerminalInputLimiter, TerminalOutputLimiter } from "./terminal";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -66,6 +66,19 @@ describe("terminal authorization boundary", () => {
     });
     const authorization = await caller.terminal.authorize();
     expect(authorization.terminalTicket).toEqual(expect.any(String));
+  });
+});
+
+describe("terminal execution context", () => {
+  it("keeps the application user while starting the PTY through the root-only launch path", () => {
+    expect(terminalShellLaunch(false)).toEqual({
+      command: "/bin/bash",
+      args: ["--noprofile", "--norc", "-i"],
+    });
+    expect(terminalShellLaunch(true)).toEqual({
+      command: "sudo",
+      args: ["-n", "-H", "/bin/bash", "--noprofile", "--norc", "-i"],
+    });
   });
 });
 
