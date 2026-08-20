@@ -37,7 +37,22 @@ export function normaliseGatewayPaths(paths: { wsPath: string; vmessWsPath: stri
 }
 
 export type GatewayProtocol = "vless" | "vmess" | "trojan" | "socks" | "shadowsocks";
+export type ClientAllowedProtocol = GatewayProtocol | "xhttp";
+export const clientAllowedProtocolOrder = ["vless", "xhttp", "vmess", "trojan", "socks", "shadowsocks"] as const satisfies readonly ClientAllowedProtocol[];
 export const shadowsocks2022Method = "2022-blake3-aes-128-gcm";
+
+export function normaliseClientAllowedProtocols(value: string | readonly string[] | null | undefined): ClientAllowedProtocol[] {
+  if (value === undefined || value === null) return [...clientAllowedProtocolOrder];
+  const entries: readonly string[] = typeof value === "string" ? value.split(",") : value;
+  const requested = new Set(entries.map(protocol => protocol.trim().toLowerCase()));
+  const normalized = clientAllowedProtocolOrder.filter(protocol => requested.has(protocol));
+  if (!normalized.length) throw new Error("Select at least one protocol for this client");
+  return normalized;
+}
+
+export function clientAllowsProtocol(client: Pick<GatewayClient, "allowedProtocols">, protocol: ClientAllowedProtocol) {
+  return normaliseClientAllowedProtocols(client.allowedProtocols).includes(protocol);
+}
 
 const xhttpExtraSettings = {
   headers: { "User-Agent": "firefox" },
@@ -234,13 +249,12 @@ function profileForClient(profile: VlessProfile, client: GatewayClient): VlessPr
 export function buildClientConnectionDetails(profile: VlessProfile, client: GatewayClient) {
   const clientProfile = profileForClient(profile, client);
   return {
-    vlessUri: buildVlessUri(clientProfile),
-    xhttpUri: buildClientXhttpUri(profile, client),
-    vmessUri: buildVmessUri(clientProfile),
-    trojanUri: buildTrojanUri(clientProfile),
-    socksClientConfig: buildSocksClientConfig(clientProfile),
-    shadowsocksUri: buildShadowsocksUri(clientProfile),
-    shadowsocksClientConfig: buildShadowsocksClientConfig(clientProfile),
+    ...(clientAllowsProtocol(client, "vless") ? { vlessUri: buildVlessUri(clientProfile) } : {}),
+    ...(clientAllowsProtocol(client, "xhttp") ? { xhttpUri: buildClientXhttpUri(profile, client) } : {}),
+    ...(clientAllowsProtocol(client, "vmess") ? { vmessUri: buildVmessUri(clientProfile) } : {}),
+    ...(clientAllowsProtocol(client, "trojan") ? { trojanUri: buildTrojanUri(clientProfile) } : {}),
+    ...(clientAllowsProtocol(client, "socks") ? { socksClientConfig: buildSocksClientConfig(clientProfile) } : {}),
+    ...(clientAllowsProtocol(client, "shadowsocks") ? { shadowsocksUri: buildShadowsocksUri(clientProfile), shadowsocksClientConfig: buildShadowsocksClientConfig(clientProfile) } : {}),
   };
 }
 
@@ -260,7 +274,7 @@ export function buildGatewayConnectionDetails(profile: VlessProfile) {
 
 export function buildClientSubscriptionPayload(profile: VlessProfile, client: GatewayClient) {
   const details = buildClientConnectionDetails(profile, client);
-  return Buffer.from([details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri, details.shadowsocksUri].join("\n"), "utf8").toString("base64");
+  return Buffer.from([details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri, details.shadowsocksUri].filter((value): value is string => Boolean(value)).join("\n"), "utf8").toString("base64");
 }
 
 export type TrafficProtocol = "vless" | "vmess" | "trojan" | "shadowsocks";
@@ -313,12 +327,14 @@ export function resolvePublicGatewayRoute(profile: VlessProfile, internalBasePor
     if (normalizedPath === gatewayPaths[mapping.protocol]) return { ...mapping, client: undefined };
   }
   const activeClients = clients.filter(client => client.enabled && (!client.expiresAt || client.expiresAt.getTime() > Date.now()));
+  const socksClients = activeClients.filter(client => clientAllowsProtocol(client, "socks"));
   for (const client of activeClients) {
     const paths = clientWebSocketPaths(profile, client);
     for (const mapping of mappings) {
       if (normalizedPath === paths[mapping.protocol]) {
+        if (!clientAllowsProtocol(client, mapping.protocol)) return undefined;
         if (mapping.protocol === "socks") {
-          return { ...mapping, internalPath: paths.socks, port: clientSocksInboundPort(internalBasePort, client.id, activeClients), client };
+          return { ...mapping, internalPath: paths.socks, port: clientSocksInboundPort(internalBasePort, client.id, socksClients), client };
         }
         return { ...mapping, client };
       }
@@ -345,6 +361,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
   };
 
   const activeClients = clients.filter(client => client.enabled && (!client.expiresAt || client.expiresAt.getTime() > Date.now()));
+  const socksClients = activeClients.filter(client => clientAllowsProtocol(client, "socks"));
   const globalClientEnabled = profile.globalProfileEnabled;
   return {
     log: { loglevel: "warning" },
@@ -363,7 +380,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         settings: {
           clients: [
             ...(globalClientEnabled ? [{ id: profile.uuid }] : []),
-            ...activeClients.map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id, "vless"), level: 0 })),
+            ...activeClients.filter(client => clientAllowsProtocol(client, "vless")).map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id, "vless"), level: 0 })),
           ],
           decryption: "none",
         },
@@ -376,7 +393,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         protocol: "vmess",
         settings: { clients: [
           ...(globalClientEnabled ? [{ id: profile.vmessUuid, level: 0 }] : []),
-          ...activeClients.map(client => ({ id: client.vmessUuid, email: clientTrafficEmail(client.id, "vmess"), level: 0 })),
+          ...activeClients.filter(client => clientAllowsProtocol(client, "vmess")).map(client => ({ id: client.vmessUuid, email: clientTrafficEmail(client.id, "vmess"), level: 0 })),
         ] },
         streamSettings: streamSettings(profile.vmessWsPath),
       },
@@ -387,7 +404,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         protocol: "trojan",
         settings: { clients: [
           ...(globalClientEnabled ? [{ password: profile.trojanPassword }] : []),
-          ...activeClients.map(client => ({ password: client.trojanPassword, email: clientTrafficEmail(client.id, "trojan"), level: 0 })),
+          ...activeClients.filter(client => clientAllowsProtocol(client, "trojan")).map(client => ({ password: client.trojanPassword, email: clientTrafficEmail(client.id, "trojan"), level: 0 })),
         ] },
         streamSettings: streamSettings(profile.trojanWsPath),
       },
@@ -411,7 +428,7 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
         settings: {
           clients: [
             ...(globalClientEnabled ? [{ id: profile.uuid }] : []),
-            ...activeClients.map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id, "vless"), level: 0 })),
+            ...activeClients.filter(client => clientAllowsProtocol(client, "xhttp")).map(client => ({ id: client.vlessUuid, email: clientTrafficEmail(client.id, "vless"), level: 0 })),
           ],
           decryption: "none",
         },
@@ -428,15 +445,15 @@ export function buildXrayConfig(profile: VlessProfile, internalPort: number, cli
           password: profile.shadowsocksServerKey,
           users: [
             ...(globalClientEnabled ? [{ password: profile.shadowsocksUserKey, level: 0 }] : []),
-            ...activeClients.map(client => ({ password: client.shadowsocksUserKey, email: clientTrafficEmail(client.id, "shadowsocks"), level: 0 })),
+            ...activeClients.filter(client => clientAllowsProtocol(client, "shadowsocks")).map(client => ({ password: client.shadowsocksUserKey, email: clientTrafficEmail(client.id, "shadowsocks"), level: 0 })),
           ],
         },
         streamSettings: streamSettings(resolvedShadowsocksWsPath(profile)),
       },
-      ...activeClients.map(client => ({
+      ...socksClients.map(client => ({
         tag: clientSocksInboundTag(client.id),
         listen: "127.0.0.1",
-        port: clientSocksInboundPort(internalPort, client.id, activeClients),
+        port: clientSocksInboundPort(internalPort, client.id, socksClients),
         protocol: "socks",
         settings: {
           auth: "password",

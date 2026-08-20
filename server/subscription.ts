@@ -5,7 +5,7 @@ import {
   getVlessProfileBySubscriptionToken,
   recordSubscriptionDelivery,
 } from "./db";
-import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSubscriptionPayload, clientWebSocketPaths, clientXhttpPath, gatewayWebSocketPaths, gatewayXhttpPath } from "./vless";
+import { buildClientConnectionDetails, buildClientSubscriptionPayload, buildSubscriptionPayload, clientAllowsProtocol, clientWebSocketPaths, clientXhttpPath, gatewayWebSocketPaths, gatewayXhttpPath } from "./vless";
 import { enforceGatewayTrafficQuotas } from "./xrayRuntime";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
@@ -95,10 +95,18 @@ async function serveSubscription(req: Request, res: Response) {
   if (browser) {
     const details = buildClientConnectionDetails(gateway, client);
     const paths = clientWebSocketPaths(gateway, client);
+    const allowedPaths = [
+      ...(clientAllowsProtocol(client, "vless") ? [paths.vless] : []),
+      ...(clientAllowsProtocol(client, "xhttp") ? [clientXhttpPath(client)] : []),
+      ...(clientAllowsProtocol(client, "vmess") ? [paths.vmess] : []),
+      ...(clientAllowsProtocol(client, "trojan") ? [paths.trojan] : []),
+      ...(clientAllowsProtocol(client, "socks") ? [paths.socks] : []),
+      ...(clientAllowsProtocol(client, "shadowsocks") ? [paths.shadowsocks] : []),
+    ];
     res.status(200).set("Cache-Control", "no-store, max-age=0").type("text/html; charset=utf-8").send(statusPage({
       name: client.name, enabled: client.enabled,
-      paths: [paths.vless, clientXhttpPath(client), paths.vmess, paths.trojan, paths.socks, paths.shadowsocks],
-      imports: [details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri, details.shadowsocksUri],
+      paths: allowedPaths,
+      imports: [details.vlessUri, details.xhttpUri, details.vmessUri, details.trojanUri, details.shadowsocksUri].filter((value): value is string => Boolean(value)),
       quota: { trafficLimitBytes: client.trafficLimitBytes, trafficUsedBytes: client.trafficUsedBytes, trafficUsageAvailable: true, dayLimit: client.dayLimit, speedLimitMbps: client.speedLimitMbps, connectionLimit: client.connectionLimit, expiresAt: client.expiresAt },
     }));
     return;

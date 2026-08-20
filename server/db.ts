@@ -1,9 +1,9 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { ClientPolicyTemplate, clientPolicyTemplates, GatewayClient, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, terminalLeases, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
+import { ClientPolicyTemplate, clientPolicyTemplates, GatewayClient, GatewayLiveSession, gatewayLiveSessions, InsertUser, ownerDevices, OwnerDevice, gatewayClients, subscriptionEvents, terminalLeases, VlessProfile, vlessProfiles, users } from "../drizzle/schema";
 import type { OwnerDeviceObservation } from "./ownerDevices";
 import { ENV } from './_core/env';
-import { createGatewayCredential, createShadowsocks2022Key, createSubscriptionToken, createVlessUuid, normaliseGatewayPaths, normaliseWsPath } from "./vless";
+import { createGatewayCredential, createShadowsocks2022Key, createSubscriptionToken, createVlessUuid, normaliseClientAllowedProtocols, normaliseGatewayPaths, normaliseWsPath } from "./vless";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -480,7 +480,7 @@ export async function getGatewayClientBySubscriptionToken(subscriptionToken: str
   return result[0];
 }
 
-export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number; speedLimitMbps?: number; connectionLimit?: number; creationRequestId?: string }): Promise<GatewayClient> {
+export async function createGatewayClient(input: { name: string; trafficLimitBytes?: number; dayLimit?: number; speedLimitMbps?: number; connectionLimit?: number; allowedProtocols?: string[]; creationRequestId?: string }): Promise<GatewayClient> {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   if (input.creationRequestId) {
@@ -511,6 +511,7 @@ export async function createGatewayClient(input: { name: string; trafficLimitByt
       dayLimit,
       speedLimitMbps,
       connectionLimit,
+      allowedProtocols: normaliseClientAllowedProtocols(input.allowedProtocols).join(","),
       expiresAt: dayLimit > 0 ? new Date(Date.now() + dayLimit * 86_400_000) : null,
     });
   } catch (error) {
@@ -603,10 +604,11 @@ export async function deleteGatewayClient(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   await db.delete(subscriptionEvents).where(eq(subscriptionEvents.clientId, id));
+  await db.delete(gatewayLiveSessions).where(eq(gatewayLiveSessions.clientId, id));
   await db.delete(gatewayClients).where(eq(gatewayClients.id, id));
 }
 
-export async function updateGatewayClientPolicy(id: number, input: { trafficLimitBytes: number; dayLimit: number; speedLimitMbps: number; connectionLimit: number }) {
+export async function updateGatewayClientPolicy(id: number, input: { trafficLimitBytes: number; dayLimit: number; speedLimitMbps: number; connectionLimit: number; allowedProtocols?: string[] }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
   const existing = await getGatewayClientById(id);
@@ -616,12 +618,75 @@ export async function updateGatewayClientPolicy(id: number, input: { trafficLimi
     dayLimit: input.dayLimit,
     speedLimitMbps: input.speedLimitMbps,
     connectionLimit: input.connectionLimit,
+    allowedProtocols: normaliseClientAllowedProtocols(input.allowedProtocols ?? existing.allowedProtocols).join(","),
     expiresAt: input.dayLimit > 0 ? new Date(Date.now() + input.dayLimit * 86_400_000) : null,
     quotaExhaustedAt: input.trafficLimitBytes < 0 || input.trafficLimitBytes > existing.trafficUsedBytes ? null : existing.quotaExhaustedAt,
   }).where(eq(gatewayClients.id, id));
   const client = await getGatewayClientById(id);
   if (!client) throw new Error("Gateway client was not found");
   return client;
+}
+
+export async function createGatewayLiveSession(input: { id: string; clientId: number; protocol: string; sourceGroup: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const now = new Date();
+  await db.insert(gatewayLiveSessions).values({ ...input, uplinkBytes: 0, downlinkBytes: 0, startedAt: now, lastSeenAt: now, disconnectRequestedAt: null, closedAt: null, closeReason: null });
+  return getGatewayLiveSessionById(input.id);
+}
+
+export async function getGatewayLiveSessionById(id: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.select().from(gatewayLiveSessions).where(eq(gatewayLiveSessions.id, id)).limit(1);
+  return result[0];
+}
+
+export async function listActiveGatewayLiveSessions(clientId?: number): Promise<GatewayLiveSession[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.execute(sql`
+    UPDATE gateway_live_sessions
+    SET closedAt = NOW(), closeReason = 'stale'
+    WHERE closedAt IS NULL AND lastSeenAt < DATE_SUB(NOW(), INTERVAL 15 SECOND)
+  `);
+  const predicate = clientId === undefined
+    ? isNull(gatewayLiveSessions.closedAt)
+    : and(eq(gatewayLiveSessions.clientId, clientId), isNull(gatewayLiveSessions.closedAt));
+  return db.select().from(gatewayLiveSessions).where(predicate).orderBy(desc(gatewayLiveSessions.lastSeenAt));
+}
+
+export async function heartbeatGatewayLiveSession(input: { id: string; uplinkBytes: number; downlinkBytes: number }) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const now = new Date();
+  await db.update(gatewayLiveSessions).set({
+    uplinkBytes: Math.max(0, Math.floor(input.uplinkBytes)),
+    downlinkBytes: Math.max(0, Math.floor(input.downlinkBytes)),
+    lastSeenAt: now,
+  }).where(and(eq(gatewayLiveSessions.id, input.id), isNull(gatewayLiveSessions.closedAt)));
+  return getGatewayLiveSessionById(input.id);
+}
+
+export async function requestGatewayLiveSessionDisconnect(id: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  await db.update(gatewayLiveSessions).set({ disconnectRequestedAt: new Date() }).where(and(eq(gatewayLiveSessions.id, id), isNull(gatewayLiveSessions.closedAt)));
+  return getGatewayLiveSessionById(id);
+}
+
+export async function closeGatewayLiveSession(input: { id: string; uplinkBytes: number; downlinkBytes: number; reason: "closed" | "disconnected" }) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const now = new Date();
+  await db.update(gatewayLiveSessions).set({
+    uplinkBytes: Math.max(0, Math.floor(input.uplinkBytes)),
+    downlinkBytes: Math.max(0, Math.floor(input.downlinkBytes)),
+    lastSeenAt: now,
+    closedAt: now,
+    closeReason: input.reason,
+  }).where(and(eq(gatewayLiveSessions.id, input.id), isNull(gatewayLiveSessions.closedAt)));
+  return getGatewayLiveSessionById(input.id);
 }
 
 /**

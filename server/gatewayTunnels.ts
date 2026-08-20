@@ -1,12 +1,29 @@
+import { randomUUID } from "crypto";
+import { closeGatewayLiveSession, createGatewayLiveSession, getGatewayLiveSessionById, heartbeatGatewayLiveSession } from "./db";
+
 type TunnelSide = {
   destroy: () => unknown;
   once(event: "close", listener: () => void): unknown;
 };
-type Tunnel = { client: TunnelSide; upstream: TunnelSide; clientId?: number; sourceId?: string };
+type Tunnel = {
+  client: TunnelSide;
+  upstream: TunnelSide;
+  clientId?: number;
+  sourceId?: string;
+  protocol?: string;
+  sessionId?: string;
+  uplinkBytes: number;
+  downlinkBytes: number;
+  disconnectRequested: boolean;
+  closed: boolean;
+  sessionCreated: boolean;
+  heartbeatTimer?: ReturnType<typeof setInterval>;
+};
 const activeTunnels = new Set<Tunnel>();
 const tunnelsByClient = new Map<number, Set<Tunnel>>();
 const tunnelsByClientSource = new Map<number, Map<string, Set<Tunnel>>>();
 const pendingSourceAdmissions = new Map<number, Map<string, number>>();
+const tunnelsBySide = new Map<TunnelSide, Tunnel>();
 
 function activeClientTunnelCount(clientId: number) {
   return tunnelsByClient.get(clientId)?.size ?? 0;
@@ -49,10 +66,12 @@ export function reserveGatewayClientSource(clientId: number, sourceId: string, c
 }
 
 /** Track an accepted public bridge tunnel until either side closes. */
-export function trackGatewayTunnel(client: TunnelSide, upstream: TunnelSide, clientId?: number, sourceId?: string, releaseReservation?: () => void) {
+export function trackGatewayTunnel(client: TunnelSide, upstream: TunnelSide, clientId?: number, sourceId?: string, releaseReservation?: () => void, protocol?: string) {
   releaseReservation?.();
-  const tunnel = { client, upstream, clientId, sourceId };
+  const tunnel: Tunnel = { client, upstream, clientId, sourceId, protocol, sessionId: clientId === undefined ? undefined : randomUUID(), uplinkBytes: 0, downlinkBytes: 0, disconnectRequested: false, closed: false, sessionCreated: false };
   activeTunnels.add(tunnel);
+  tunnelsBySide.set(client, tunnel);
+  tunnelsBySide.set(upstream, tunnel);
   if (clientId !== undefined) {
     const clientTunnels = tunnelsByClient.get(clientId) ?? new Set<Tunnel>();
     clientTunnels.add(tunnel);
@@ -65,8 +84,31 @@ export function trackGatewayTunnel(client: TunnelSide, upstream: TunnelSide, cli
       tunnelsByClientSource.set(clientId, sources);
     }
   }
+  if (tunnel.sessionId && clientId !== undefined && sourceId && protocol) {
+    void createGatewayLiveSession({ id: tunnel.sessionId, clientId, protocol, sourceGroup: sourceId }).then(() => {
+      tunnel.sessionCreated = true;
+      if (!tunnel.closed || !tunnel.sessionId) return;
+      return closeGatewayLiveSession({ id: tunnel.sessionId, uplinkBytes: tunnel.uplinkBytes, downlinkBytes: tunnel.downlinkBytes, reason: tunnel.disconnectRequested ? "disconnected" : "closed" });
+    }).catch(() => undefined);
+    tunnel.heartbeatTimer = setInterval(() => {
+      if (!tunnel.sessionId) return;
+      void heartbeatGatewayLiveSession({ id: tunnel.sessionId, uplinkBytes: tunnel.uplinkBytes, downlinkBytes: tunnel.downlinkBytes }).catch(() => undefined);
+      void getGatewayLiveSessionById(tunnel.sessionId).then(session => {
+        if (!session?.disconnectRequestedAt || tunnel.disconnectRequested) return;
+        tunnel.disconnectRequested = true;
+        tunnel.client.destroy();
+        tunnel.upstream.destroy();
+      }).catch(() => undefined);
+    }, 3_000);
+    tunnel.heartbeatTimer.unref?.();
+  }
   const cleanup = () => {
+    if (tunnel.closed) return;
+    tunnel.closed = true;
+    if (tunnel.heartbeatTimer) clearInterval(tunnel.heartbeatTimer);
     activeTunnels.delete(tunnel);
+    tunnelsBySide.delete(client);
+    tunnelsBySide.delete(upstream);
     if (clientId !== undefined) {
       const clientTunnels = tunnelsByClient.get(clientId);
       clientTunnels?.delete(tunnel);
@@ -79,10 +121,21 @@ export function trackGatewayTunnel(client: TunnelSide, upstream: TunnelSide, cli
         if (!sources?.size) tunnelsByClientSource.delete(clientId);
       }
     }
+    if (tunnel.sessionId && tunnel.sessionCreated) {
+      void closeGatewayLiveSession({ id: tunnel.sessionId, uplinkBytes: tunnel.uplinkBytes, downlinkBytes: tunnel.downlinkBytes, reason: tunnel.disconnectRequested ? "disconnected" : "closed" }).catch(() => undefined);
+    }
   };
   client.once("close", cleanup);
   upstream.once("close", cleanup);
   return cleanup;
+}
+
+/** Updates durable-session byte counters without adding per-chunk database traffic. */
+export function observeGatewayTunnelTraffic(side: TunnelSide, direction: "uplink" | "downlink", bytes: number) {
+  const tunnel = tunnelsBySide.get(side);
+  if (!tunnel || !tunnel.sessionId || bytes <= 0) return;
+  if (direction === "uplink") tunnel.uplinkBytes += bytes;
+  else tunnel.downlinkBytes += bytes;
 }
 
 /** Explicitly tears down public and private sides of all active bridge tunnels. */
@@ -96,6 +149,7 @@ export function closeActiveGatewayTunnels() {
   tunnelsByClient.clear();
   tunnelsByClientSource.clear();
   pendingSourceAdmissions.clear();
+  tunnelsBySide.clear();
   return tunnels.length;
 }
 

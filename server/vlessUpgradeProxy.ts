@@ -5,7 +5,7 @@ import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
 import { resolvePublicGatewayRoute } from "./vless";
 import { enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
-import { reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
+import { observeGatewayTunnelTraffic, reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
 
 type UpgradeDependencies = {
   getProfile?: () => Promise<VlessProfile | undefined>;
@@ -190,18 +190,26 @@ function meterClientTunnel(
     enforceQuota,
   });
   let flushed = false;
-  const observe = (chunk: Buffer) => { void meter.observe(chunk.length); };
+  const observe = (chunk: Buffer) => {
+    void meter.observe(chunk.length);
+    observeGatewayTunnelTraffic(publicSocket, "uplink", chunk.length);
+  };
+  const observeDownlink = (bytes: number) => {
+    if (bytes <= 0) return;
+    void meter.observe(bytes);
+    observeGatewayTunnelTraffic(upstream, "downlink", bytes);
+  };
   let upstreamHandshakeComplete = false;
   let upstreamHandshakeBuffer = Buffer.alloc(0);
   const observeUpstream = (chunk: Buffer) => {
-    if (upstreamHandshakeComplete) return observe(chunk);
+    if (upstreamHandshakeComplete) return observeDownlink(chunk.length);
     upstreamHandshakeBuffer = Buffer.concat([upstreamHandshakeBuffer, chunk]);
     const headerBoundary = upstreamHandshakeBuffer.indexOf("\r\n\r\n");
     if (headerBoundary === -1) return;
     upstreamHandshakeComplete = true;
     const payloadBytes = upstreamHandshakeBuffer.length - headerBoundary - 4;
     upstreamHandshakeBuffer = Buffer.alloc(0);
-    if (payloadBytes > 0) void meter.observe(payloadBytes);
+    observeDownlink(payloadBytes);
   };
   publicSocket.on("data", observe);
   upstream.on("data", observeUpstream);
@@ -249,8 +257,11 @@ async function bridgeUpgrade(
   upstream.once("connect", () => {
     clearTimeout(connectTimeout);
     upstream.write(buildUpgradeRequest(req, route.port, route.internalPath));
-    trackGatewayTunnel(socket, upstream, route.client?.id, sourceIdentity, releaseConnectionReservation);
-    if (route.client) meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
+    trackGatewayTunnel(socket, upstream, route.client?.id, sourceIdentity, releaseConnectionReservation, route.protocol);
+    if (route.client) {
+      if (head.length > 0) observeGatewayTunnelTraffic(socket, "uplink", head.length);
+      meterClientTunnel(route.client, profile, socket, upstream, head.length, dependencies.recordTraffic, dependencies.enforceQuota);
+    }
     const speedLimiter = route.client && route.client.speedLimitMbps > 0
       ? limiterForGatewayClient(route.client)
       : undefined;

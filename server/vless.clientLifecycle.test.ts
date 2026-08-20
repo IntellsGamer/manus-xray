@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
   deleteGatewayClient: vi.fn(),
   listGatewayClients: vi.fn(),
   listSubscriptionEventsForClient: vi.fn(),
+  listActiveGatewayLiveSessions: vi.fn(),
   getGatewayClientById: vi.fn(),
+  getGatewayLiveSessionById: vi.fn(),
   markGatewayClientActivationFailed: vi.fn(),
   regenerateGatewayProtocolCredential: vi.fn(),
   regenerateSubscriptionToken: vi.fn(),
@@ -17,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   revokeGatewayClient: vi.fn(),
   rotateGatewayClientCredentials: vi.fn(),
   setGatewayClientEnabled: vi.fn(),
+  requestGatewayLiveSessionDisconnect: vi.fn(),
   updateGatewayPathsAndGlobalProfile: vi.fn(),
   updateGatewayClientPolicy: vi.fn(),
   updateVlessProfile: vi.fn(),
@@ -29,6 +32,8 @@ vi.mock("./db", () => ({
   deleteGatewayClient: mocks.deleteGatewayClient,
   ensureVlessProfile: mocks.ensureVlessProfile,
   getGatewayClientById: mocks.getGatewayClientById,
+  getGatewayLiveSessionById: mocks.getGatewayLiveSessionById,
+  listActiveGatewayLiveSessions: mocks.listActiveGatewayLiveSessions,
   listGatewayClients: mocks.listGatewayClients,
   listSubscriptionEventsForClient: mocks.listSubscriptionEventsForClient,
   markGatewayClientActivationFailed: mocks.markGatewayClientActivationFailed,
@@ -39,6 +44,7 @@ vi.mock("./db", () => ({
   revokeGatewayClient: mocks.revokeGatewayClient,
   rotateGatewayClientCredentials: mocks.rotateGatewayClientCredentials,
   setGatewayClientEnabled: mocks.setGatewayClientEnabled,
+  requestGatewayLiveSessionDisconnect: mocks.requestGatewayLiveSessionDisconnect,
   updateGatewayPathsAndGlobalProfile: mocks.updateGatewayPathsAndGlobalProfile,
   updateGatewayClientPolicy: mocks.updateGatewayClientPolicy,
   updateVlessProfile: mocks.updateVlessProfile,
@@ -50,6 +56,8 @@ vi.mock("./vless", () => ({
   buildTrojanUri: vi.fn(() => "trojan://isolated"),
   buildVlessUri: vi.fn(() => "vless://isolated"),
   buildVmessUri: vi.fn(() => "vmess://isolated"),
+  clientAllowedProtocolOrder: ["vless", "xhttp", "vmess", "trojan", "socks", "shadowsocks"],
+  normaliseClientAllowedProtocols: vi.fn((value?: string | string[]) => value === undefined ? ["vless", "xhttp", "vmess", "trojan", "socks", "shadowsocks"] : Array.isArray(value) ? value : value.split(",")),
   normaliseWsPath: vi.fn((value: string) => value),
 }));
 
@@ -91,6 +99,7 @@ const storedClient = {
   dayLimit: -1,
   speedLimitMbps: -1,
   connectionLimit: -1,
+  allowedProtocols: "vless,xhttp,vmess,trojan,socks,shadowsocks",
   expiresAt: null,
   subscriptionDeliveryCount: 0,
   lastSubscriptionAt: null,
@@ -121,6 +130,9 @@ describe("client lifecycle mutations", () => {
     vi.clearAllMocks();
     mocks.ensureVlessProfile.mockResolvedValue(profile);
     mocks.getGatewayClientById.mockResolvedValue(storedClient);
+    mocks.listActiveGatewayLiveSessions.mockResolvedValue([]);
+    mocks.getGatewayLiveSessionById.mockResolvedValue({ id: "ce1b6a8a-0000-4000-8000-000000000009", closedAt: null });
+    mocks.requestGatewayLiveSessionDisconnect.mockResolvedValue(undefined);
     mocks.updateGatewayClientPolicy.mockResolvedValue({
       ...storedClient,
       trafficLimitBytes: 10 * 1024 * 1024 * 1024,
@@ -177,7 +189,7 @@ describe("client lifecycle mutations", () => {
     const caller = vlessRouter.createCaller(adminContext());
     const creationRequestId = "ce1b6a8a-0000-4000-8000-000000000001";
     const result = await caller.createClient({ name: "Unlimited default", creationRequestId });
-    expect(mocks.createGatewayClient).toHaveBeenCalledWith({ name: "Unlimited default", trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1, connectionLimit: -1, creationRequestId });
+    expect(mocks.createGatewayClient).toHaveBeenCalledWith({ name: "Unlimited default", trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1, connectionLimit: -1, allowedProtocols: ["vless", "xhttp", "vmess", "trojan", "socks", "shadowsocks"], creationRequestId });
     expect(mocks.applyXrayProfile).not.toHaveBeenCalled();
     expect(result).toMatchObject({ enabled: false, activationPending: true });
 
@@ -239,5 +251,23 @@ describe("client lifecycle mutations", () => {
 
     expect(mocks.resetGatewayClientTrafficUsage).toHaveBeenCalledWith(storedClient.id);
     expect(result).toMatchObject({ id: storedClient.id, trafficUsedBytes: 0, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1 });
+  });
+
+  it("persists a narrowed per-client protocol allowlist before refreshing Xray", async () => {
+    const caller = vlessRouter.createCaller(adminContext());
+    await caller.updateClientPolicy({ id: storedClient.id, trafficLimitBytes: -1, dayLimit: -1, speedLimitMbps: -1, connectionLimit: -1, allowedProtocols: ["vless", "xhttp"] });
+
+    expect(mocks.updateGatewayClientPolicy).toHaveBeenCalledWith(storedClient.id, expect.objectContaining({ allowedProtocols: ["vless", "xhttp"] }));
+    expect(mocks.applyXrayProfile).toHaveBeenCalledWith(profile);
+  });
+
+  it("lists active sessions and requests a targeted cross-instance disconnect", async () => {
+    const sessionId = "ce1b6a8a-0000-4000-8000-000000000009";
+    mocks.listActiveGatewayLiveSessions.mockResolvedValue([{ id: sessionId, clientId: storedClient.id, closedAt: null }]);
+    const caller = vlessRouter.createCaller(adminContext());
+
+    await expect(caller.liveSessions()).resolves.toEqual([{ id: sessionId, clientId: storedClient.id, closedAt: null }]);
+    await expect(caller.disconnectLiveSession({ id: sessionId })).resolves.toEqual({ success: true });
+    expect(mocks.requestGatewayLiveSessionDisconnect).toHaveBeenCalledWith(sessionId);
   });
 });

@@ -9,6 +9,7 @@ import { CalendarClock, ChevronDown, ChevronUp, Copy, Gauge, HardDrive, KeyRound
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 type QuotaUnit = "MB" | "GB";
+type ClientProtocol = "vless" | "xhttp" | "vmess" | "trojan" | "socks" | "shadowsocks";
 
 type ClientRecord = {
   id: number;
@@ -27,6 +28,7 @@ type ClientRecord = {
   dayLimit: number;
   speedLimitMbps: number;
   connectionLimit: number;
+  allowedProtocols: ClientProtocol[];
   subscriptionPath: string;
   createdAt: Date | string;
 };
@@ -41,7 +43,7 @@ type ClientRegistryProps = {
   onResetUsage: (id: number) => void;
   onDelete: (id: number, name: string) => void;
   onCopy: (value: string) => void;
-  onSavePolicy: (id: number, trafficLimitBytes: number, dayLimit: number, speedLimitMbps: number, connectionLimit: number) => void;
+  onSavePolicy: (id: number, trafficLimitBytes: number, dayLimit: number, speedLimitMbps: number, connectionLimit: number, allowedProtocols?: ClientProtocol[]) => void;
 };
 
 type ClientActionCandidate = Pick<ClientRecord, "id" | "name">;
@@ -51,6 +53,14 @@ function formatBytes(bytes: number) {
   if (bytes < 0) return "Unlimited";
   if (bytes >= 1024 ** 3) return `${Math.round((bytes / 1024 ** 3) * 100) / 100} GB`;
   return `${Math.round((bytes / 1024 ** 2) * 100) / 100} MB`;
+}
+
+function formatSessionDuration(startedAt: Date | string) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1_000));
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  const remainder = seconds % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
 }
 
 function limitFormValue(bytes: number): { value: string; unit: QuotaUnit } {

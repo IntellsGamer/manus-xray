@@ -159,6 +159,29 @@ describe("VLESS profile serialization", () => {
     expect(resolvePublicGatewayRoute(profile, 10000, [namedClient], "/vless/unknown-route")).toBeUndefined();
   });
 
+  it("enforces a narrowed protocol allowlist across imports, subscriptions, routes, and private Xray credentials", () => {
+    const restrictedClient = { ...namedClient, allowedProtocols: "vless,xhttp" };
+    const paths = clientWebSocketPaths(profile, restrictedClient);
+    const details = buildClientConnectionDetails(profile, restrictedClient);
+    const config = buildXrayConfig({ ...profile, globalProfileEnabled: false }, 10_000, [restrictedClient]) as { inbounds: Array<{ tag?: string; settings: { clients?: Array<{ id?: string; password?: string }>; users?: Array<{ password?: string }> } }> };
+    const subscriptionLines = Buffer.from(buildClientSubscriptionPayload(profile, restrictedClient), "base64").toString("utf8").split("\n");
+
+    expect(details.vlessUri).toBeDefined();
+    expect(details.xhttpUri).toBeDefined();
+    expect(details.vmessUri).toBeUndefined();
+    expect(details.trojanUri).toBeUndefined();
+    expect(details.shadowsocksUri).toBeUndefined();
+    expect(subscriptionLines).toHaveLength(2);
+    expect(resolvePublicGatewayRoute(profile, 10_000, [restrictedClient], paths.vless)).toMatchObject({ protocol: "vless", client: { id: restrictedClient.id } });
+    expect(resolvePublicGatewayRoute(profile, 10_000, [restrictedClient], paths.vmess)).toBeUndefined();
+    expect(config.inbounds[0]?.settings.clients).toEqual([{ id: restrictedClient.vlessUuid, email: `gateway-client-${restrictedClient.id}-vless@local.invalid`, level: 0 }]);
+    expect(config.inbounds[1]?.settings.clients).toEqual([]);
+    expect(config.inbounds[2]?.settings.clients).toEqual([]);
+    expect(config.inbounds[4]?.settings.clients).toEqual([{ id: restrictedClient.vlessUuid, email: `gateway-client-${restrictedClient.id}-vless@local.invalid`, level: 0 }]);
+    expect(config.inbounds[5]?.settings.users).toEqual([]);
+    expect(config.inbounds.find(inbound => inbound.tag === `gateway-client-${restrictedClient.id}-socks-in`)).toBeUndefined();
+  });
+
   it("allocates a valid bounded SOCKS listener port for a high database client ID", () => {
     const highIdClient = { ...namedClient, id: 510_001 };
     const route = resolvePublicGatewayRoute(profile, 10_000, [highIdClient], clientWebSocketPaths(profile, highIdClient).socks);

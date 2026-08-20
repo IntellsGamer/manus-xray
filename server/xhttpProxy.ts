@@ -2,8 +2,8 @@ import type { Express, Request, Response } from "express";
 import { request as requestHttp } from "http";
 import type { GatewayClient, VlessProfile } from "../drizzle/schema";
 import { getVlessProfile, listGatewayClients, recordGatewayClientTunnelTraffic } from "./db";
-import { reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
-import { clientXhttpPath, gatewayXhttpPath } from "./vless";
+import { observeGatewayTunnelTraffic, reserveGatewayClientSource, trackGatewayTunnel } from "./gatewayTunnels";
+import { clientAllowsProtocol, clientXhttpPath, gatewayXhttpPath } from "./vless";
 import { ClientSpeedLimiter, createSpeedLimitTransform, createTunnelUsageFlusher, gatewaySourceIdentity, limiterForGatewayClient } from "./vlessUpgradeProxy";
 import { enforceGatewayTrafficQuotas, xrayInternalPort } from "./xrayRuntime";
 
@@ -25,7 +25,7 @@ export function resolvePublicXhttpRoute(profile: VlessProfile, clients: GatewayC
     const internalPath = rewritePublicXhttpPath(gatewayXhttpPath(profile), originalUrl);
     if (internalPath) return { internalPath };
   }
-  for (const client of clients.filter(activeClient)) {
+  for (const client of clients.filter(client => activeClient(client) && clientAllowsProtocol(client, "xhttp"))) {
     const internalPath = rewritePublicXhttpPath(clientXhttpPath(client), originalUrl);
     if (internalPath) return { internalPath, client };
   }
@@ -90,8 +90,12 @@ function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route:
     });
     res.flushHeaders();
     if (route.client) {
-      trackGatewayTunnel(res, upstreamResponse, route.client.id, gatewaySourceIdentity(req), releaseReservation);
-      upstreamResponse.on("data", chunk => { void meter?.observe(Buffer.byteLength(chunk)); });
+      trackGatewayTunnel(res, upstreamResponse, route.client.id, gatewaySourceIdentity(req), releaseReservation, "xhttp");
+      upstreamResponse.on("data", chunk => {
+        const bytes = Buffer.byteLength(chunk);
+        void meter?.observe(bytes);
+        observeGatewayTunnelTraffic(upstreamResponse, "downlink", bytes);
+      });
       upstreamResponse.once("end", () => { void meter?.flush(true); });
       upstreamResponse.once("close", () => { void meter?.flush(true); });
     } else {
@@ -106,7 +110,11 @@ function forwardXhttp(req: Request, res: Response, profile: VlessProfile, route:
     if (!res.headersSent) res.status(502).type("text/plain").send("Gateway transport unavailable");
     else res.destroy();
   });
-  req.on("data", chunk => { void meter?.observe(Buffer.byteLength(chunk)); });
+  req.on("data", chunk => {
+    const bytes = Buffer.byteLength(chunk);
+    void meter?.observe(bytes);
+    observeGatewayTunnelTraffic(res, "uplink", bytes);
+  });
   req.once("close", () => { void meter?.flush(true); });
   pipeXhttpPayload(req, upstream, limiter);
 }

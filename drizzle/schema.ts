@@ -79,6 +79,7 @@ export const gatewayClients = mysqlTable("gateway_clients", {
   dayLimit: int("dayLimit").notNull().default(-1),
   speedLimitMbps: int("speedLimitMbps").notNull().default(-1),
   connectionLimit: int("connectionLimit").notNull().default(-1),
+  allowedProtocols: varchar("allowedProtocols", { length: 128 }).notNull().default("vless,xhttp,vmess,trojan,socks,shadowsocks"),
   expiresAt: timestamp("expiresAt"),
   lastSubscriptionAt: timestamp("lastSubscriptionAt"),
   subscriptionDeliveryCount: int("subscriptionDeliveryCount").notNull().default(0),
@@ -88,6 +89,26 @@ export const gatewayClients = mysqlTable("gateway_clients", {
 
 export type GatewayClient = typeof gatewayClients.$inferSelect;
 export type InsertGatewayClient = typeof gatewayClients.$inferInsert;
+
+/** Durable owner-visible state for a named gateway tunnel, including cross-instance disconnect requests. */
+export const gatewayLiveSessions = mysqlTable("gateway_live_sessions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  clientId: int("clientId").notNull(),
+  protocol: varchar("protocol", { length: 24 }).notNull(),
+  sourceGroup: varchar("sourceGroup", { length: 96 }).notNull(),
+  uplinkBytes: bigint("uplinkBytes", { mode: "number" }).notNull().default(0),
+  downlinkBytes: bigint("downlinkBytes", { mode: "number" }).notNull().default(0),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  disconnectRequestedAt: timestamp("disconnectRequestedAt"),
+  closedAt: timestamp("closedAt"),
+  closeReason: varchar("closeReason", { length: 32 }),
+}, table => [
+  index("gateway_live_sessions_client_active_idx").on(table.clientId, table.closedAt, table.lastSeenAt),
+  index("gateway_live_sessions_disconnect_idx").on(table.disconnectRequestedAt, table.closedAt),
+]);
+
+export type GatewayLiveSession = typeof gatewayLiveSessions.$inferSelect;
 
 /** Reusable client-policy presets. They never contain client credentials or usage. */
 export const clientPolicyTemplates = mysqlTable("client_policy_templates", {

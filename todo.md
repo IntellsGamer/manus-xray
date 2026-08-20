@@ -200,3 +200,9 @@
 - [x] Return a clean quota-policy rejection, rather than a 500 error, when enabling a client whose current stored usage still exhausts its limit.
 - [x] Replace invalid high-ID per-client SOCKS port derivation so client policy refreshes remain valid regardless of database identifier size.
 - [x] Superseded duplicate: fix policy editing for quota-reached clients so updated limits save without a 500 error or a required usage reset.
+- [ ] Diagnose the reported approximately 50 MB/s ceiling for unlimited clients and remove any controllable gateway bottleneck without weakening policy enforcement.
+- [ ] Benchmark unlimited-client gateway throughput against the approximately 100 MB/s Azure reference to isolate bridge, edge, or upstream limitations.
+- [ ] Isolate the managed VPN’s roughly 100 MB/s Azure-path ceiling from the much faster direct-link capacity and remove any gateway-controlled cap.
+- [ ] Complete throughput discovery without modifying the gateway, present a proposed improvement plan, and await approval before implementation.
+- [x] Add owner-visible live VPN sessions with source-network grouping, duration, transferred bytes, and individual cross-instance disconnect controls.
+- [x] Add enforceable per-client protocol allowlists across generated imports, subscriptions, public routes, and Xray runtime configuration.

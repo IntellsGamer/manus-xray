@@ -5,6 +5,8 @@ import {
   deleteGatewayClient,
   ensureVlessProfile,
   getGatewayClientById,
+  getGatewayLiveSessionById,
+  listActiveGatewayLiveSessions,
   listGatewayClients,
   listSubscriptionEventsForClient,
   markGatewayClientActivationFailed,
@@ -15,13 +17,14 @@ import {
   revokeGatewayClient,
   rotateGatewayClientCredentials,
   setGatewayClientEnabled,
+  requestGatewayLiveSessionDisconnect,
   updateGatewayPathsAndGlobalProfile,
   updateGatewayClientPolicy,
   updateVlessProfile,
 } from "../db";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, router } from "../_core/trpc";
-import { buildClientConnectionDetails, buildGatewayConnectionDetails, normaliseWsPath } from "../vless";
+import { buildClientConnectionDetails, buildGatewayConnectionDetails, clientAllowedProtocolOrder, normaliseClientAllowedProtocols, normaliseWsPath } from "../vless";
 import { applyXrayProfile, enforceGatewayTrafficQuotas, getXrayRuntimeStatus } from "../xrayRuntime";
 
 const profileInput = z.object({
@@ -42,6 +45,7 @@ const pathsInput = z.object({
 
 const speedLimitInput = z.number().int().min(-1).max(100_000).refine(value => value === -1 || value >= 1, "Speed limit must be -1 or at least 1 Mbps");
 const connectionLimitInput = z.number().int().min(-1).max(10_000).refine(value => value === -1 || value >= 1, "Connection limit must be -1 or at least 1");
+const allowedProtocolsInput = z.array(z.enum(clientAllowedProtocolOrder)).min(1, "Select at least one protocol").max(clientAllowedProtocolOrder.length);
 
 function requestHost(headers: Record<string, string | string[] | undefined>) {
   const forwarded = headers["x-forwarded-host"];
@@ -92,6 +96,7 @@ function presentClient(profile: Awaited<ReturnType<typeof ensureVlessProfile>>, 
     dayLimit: client.dayLimit,
     speedLimitMbps: client.speedLimitMbps,
     connectionLimit: client.connectionLimit,
+    allowedProtocols: normaliseClientAllowedProtocols(client.allowedProtocols),
     subscriptionPath: `/sub/${client.subscriptionToken}`,
     subscriptionDeliveryCount: client.subscriptionDeliveryCount,
     lastSubscriptionAt: client.lastSubscriptionAt,
@@ -150,7 +155,14 @@ export const vlessRouter = router({
       recentDeliveries: await listSubscriptionEventsForClient(client.id),
     })));
   }),
-  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1), speedLimitMbps: speedLimitInput.default(-1), connectionLimit: connectionLimitInput.default(-1), creationRequestId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+  liveSessions: adminProcedure.query(() => listActiveGatewayLiveSessions()),
+  disconnectLiveSession: adminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ input }) => {
+    const session = await getGatewayLiveSessionById(input.id);
+    if (!session || session.closedAt) throw new TRPCError({ code: "NOT_FOUND", message: "Live VPN session was not found" });
+    await requestGatewayLiveSessionDisconnect(input.id);
+    return { success: true } as const;
+  }),
+  createClient: adminProcedure.input(z.object({ name: z.string().trim().min(1).max(120), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).default(-1), dayLimit: z.number().int().min(-1).max(3650).default(-1), speedLimitMbps: speedLimitInput.default(-1), connectionLimit: connectionLimitInput.default(-1), allowedProtocols: allowedProtocolsInput.default([...clientAllowedProtocolOrder]), creationRequestId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await createGatewayClient(input);
     return presentClient(profile, client);
@@ -201,7 +213,7 @@ export const vlessRouter = router({
     await applyXrayProfile(profile);
     return { success: true } as const;
   }),
-  updateClientPolicy: adminProcedure.input(z.object({ id: z.number().int().positive(), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER), dayLimit: z.number().int().min(-1).max(3650), speedLimitMbps: speedLimitInput, connectionLimit: connectionLimitInput })).mutation(async ({ ctx, input }) => {
+  updateClientPolicy: adminProcedure.input(z.object({ id: z.number().int().positive(), trafficLimitBytes: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER), dayLimit: z.number().int().min(-1).max(3650), speedLimitMbps: speedLimitInput, connectionLimit: connectionLimitInput, allowedProtocols: allowedProtocolsInput.optional() })).mutation(async ({ ctx, input }) => {
     const profile = await profileForRequest(ctx.req.headers);
     const client = await updateGatewayClientPolicy(input.id, input);
     await applyXrayProfile(profile);
