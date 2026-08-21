@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "http";
-import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalAdministrator, isTerminalOriginAllowed, parseTerminalFrame, TerminalInputLimiter, TerminalOutputLimiter } from "./terminal";
+import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalAdministrator, isTerminalOriginAllowed, parseTerminalFrame, TerminalInputLimiter, TerminalOutputLimiter, waitForTerminalAvailability } from "./terminal";
 import { parseRootTerminalBrokerFrame, ROOT_TERMINAL_SOCKET_PATH } from "./rootTerminalBroker";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
@@ -98,6 +98,15 @@ describe("shared terminal lease coordination", () => {
     await accepted.release();
     expect(release).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledWith("terminal-lease-1", "instance-1");
+  });
+
+  it("briefly retries the slot or lease while a refreshed page closes its previous session", async () => {
+    const check = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(waitForTerminalAvailability(check, { attempts: 3, wait })).resolves.toBe(true);
+    expect(check).toHaveBeenCalledTimes(3);
+    expect(wait).toHaveBeenCalledTimes(2);
   });
 });
 

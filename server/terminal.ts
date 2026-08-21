@@ -18,6 +18,8 @@ const MAX_IDLE_MS = 5 * 60 * 1000;
 const MAX_SESSION_MS = 14 * 60 * 1000;
 const MAX_COLS = 300;
 const MAX_ROWS = 120;
+const TERMINAL_REFRESH_GRACE_ATTEMPTS = 24;
+const TERMINAL_REFRESH_GRACE_DELAY_MS = 100;
 
 type TerminalFrame =
   | { type: "input"; data: string }
@@ -48,6 +50,22 @@ export function createTerminalLeaseCoordinator(
       await store.release(input.leaseId, input.instanceId);
     },
   };
+}
+
+export async function waitForTerminalAvailability(
+  check: () => boolean | Promise<boolean>,
+  options: {
+    attempts?: number;
+    wait?: () => Promise<void>;
+  } = {},
+) {
+  const attempts = options.attempts ?? TERMINAL_REFRESH_GRACE_ATTEMPTS;
+  const wait = options.wait ?? (() => new Promise<void>(resolve => setTimeout(resolve, TERMINAL_REFRESH_GRACE_DELAY_MS)));
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await check()) return true;
+    if (attempt < attempts - 1) await wait();
+  }
+  return false;
 }
 
 export function createTerminalSessionFinalizer(input: {
@@ -318,7 +336,8 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
     return;
   }
 
-  if (terminalSockets.size >= MAX_SESSIONS_PER_PROCESS) {
+  const slotAvailable = await waitForTerminalAvailability(() => terminalSockets.size < MAX_SESSIONS_PER_PROCESS);
+  if (!slotAvailable) {
     console.warn("[Terminal] Rejected upgrade because this instance already has an active terminal session.");
     rejectUpgrade(socket, 429, "Too Many Requests");
     return;
@@ -333,7 +352,7 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
     instanceId: terminalInstanceId,
     expiresAt: new Date(Date.now() + MAX_SESSION_MS),
   });
-  const acquired = await lease.acquire().catch(() => false);
+  const acquired = await waitForTerminalAvailability(() => lease.acquire().catch(() => false));
   if (!acquired) {
     console.warn("[Terminal] Rejected upgrade because another instance holds the terminal lease.");
     rejectUpgrade(socket, 429, "Too Many Requests");

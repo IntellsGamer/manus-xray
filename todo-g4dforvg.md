@@ -22,3 +22,8 @@
 - [x] Diagnose the Terminal page’s indefinite viewport growth and resize feedback loop.
 - [x] Stabilize the terminal container size and deduplicate resize events without altering PTY throughput behavior.
 - [ ] Validate and publish the Terminal viewport-growth fix.
+- [x] Add an explicit Terminal notice that local filesystem changes are ephemeral across container refreshes or restarts.
+- [ ] Validate and publish the Terminal persistence-boundary clarification.
+- [x] Diagnose why a refreshed Terminal cannot obtain a new session after its prior request-scoped session closes.
+- [x] Make Terminal WebSocket and lease cleanup refresh-safe without weakening the single-session boundary.
+- [ ] Validate and publish refresh reconnect behavior.

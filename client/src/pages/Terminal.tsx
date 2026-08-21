@@ -337,6 +337,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
         <span>Ctrl+Shift+C copies the selection.</span>
         <span>Ctrl+Shift+V pastes clipboard content.</span>
         <span>Interactive programs receive a real PTY and resize events.</span>
+        <span className="text-amber-300/80">Container filesystem changes are ephemeral and may disappear after refresh or restart.</span>
       </footer>
     </div>
   );
