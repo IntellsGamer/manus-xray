@@ -19,3 +19,6 @@
 - [x] Exercise the production entrypoint locally to confirm a root broker, an app-user web process, and app-group socket access.
 - [x] Exercise the server-to-broker terminal transport under the production entrypoint before publication.
 - [ ] Confirm the published authenticated WebSocket terminal path reaches the root broker and returns `id -u` as `0`.
+- [x] Diagnose the Terminal page’s indefinite viewport growth and resize feedback loop.
+- [x] Stabilize the terminal container size and deduplicate resize events without altering PTY throughput behavior.
+- [ ] Validate and publish the Terminal viewport-growth fix.

@@ -6,6 +6,7 @@ import { Clipboard, Copy, CornerDownLeft, Power, RefreshCw, ShieldCheck, Termina
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { didTerminalViewportChange } from "@/lib/terminalSizing";
 import { trpc } from "@/lib/trpc";
 
 type ConnectionState = "checking" | "connecting" | "connected" | "disconnected" | "blocked";
@@ -28,6 +29,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const lastViewportRef = useRef<{ width: number; height: number } | null>(null);
   const outputQueueRef = useRef<string[]>([]);
   const outputQueuedCharsRef = useRef(0);
   const outputFlushPendingRef = useRef(false);
@@ -67,14 +69,23 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
     }
   };
 
-  const fitTerminal = () => {
+  const fitTerminal = (forceResizeFrame = false) => {
     const terminal = terminalRef.current;
     const fitAddon = fitAddonRef.current;
-    if (!terminal || !fitAddon) return;
+    const host = terminalHostRef.current;
+    if (!terminal || !fitAddon || !host) return;
     try {
-      fitAddon.fit();
+      const viewport = {
+        width: Math.floor(host.clientWidth),
+        height: Math.floor(host.clientHeight),
+      };
+      if (viewport.width < 2 || viewport.height < 2) return;
+      if (didTerminalViewportChange(lastViewportRef.current, viewport)) {
+        lastViewportRef.current = viewport;
+        fitAddon.fit();
+      }
       const size = { cols: terminal.cols, rows: terminal.rows };
-      if (lastSizeRef.current?.cols !== size.cols || lastSizeRef.current?.rows !== size.rows) {
+      if (size.cols > 0 && size.rows > 0 && (forceResizeFrame || lastSizeRef.current?.cols !== size.cols || lastSizeRef.current?.rows !== size.rows)) {
         lastSizeRef.current = size;
         sendFrame({ type: "resize", ...size });
       }
@@ -194,6 +205,8 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      lastViewportRef.current = null;
+      lastSizeRef.current = null;
     };
   }, []);
 
@@ -209,7 +222,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
     socket.onopen = () => {
       setConnectionState("connected");
       terminal.clear();
-      fitTerminal();
+      fitTerminal(true);
     };
     socket.onmessage = event => {
       if (typeof event.data !== "string") return;
@@ -268,8 +281,8 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
   const StatusIcon = status.icon;
 
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-2rem)] w-full max-w-[1700px] flex-col gap-4">
-      <header className="flex flex-col gap-3 rounded-2xl border border-cyan-500/20 bg-slate-950/80 px-4 py-4 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5">
+    <div className="mx-auto flex h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[1700px] flex-col gap-4 overflow-hidden">
+      <header className="shrink-0 flex flex-col gap-3 rounded-2xl border border-cyan-500/20 bg-slate-950/80 px-4 py-4 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-200">
             <TerminalSquare className="h-5 w-5" />
@@ -285,7 +298,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
         </div>
       </header>
 
-      <section className="flex min-h-[440px] flex-1 flex-col overflow-hidden rounded-2xl border border-cyan-500/20 bg-[#071014] shadow-2xl shadow-cyan-950/30">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cyan-500/20 bg-[#071014] shadow-2xl shadow-cyan-950/30">
         <div className="flex flex-col gap-3 border-b border-cyan-400/10 bg-slate-950/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
             <span className="h-2 w-2 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,.95)]" />
@@ -315,12 +328,12 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
           </div>
         </div>
 
-        <div className="relative min-h-[390px] flex-1 p-2 sm:p-3">
-          <div ref={terminalHostRef} className="h-full w-full overflow-hidden rounded-xl bg-[#071014] p-2 sm:p-3" />
+        <div className="relative min-h-0 flex-1 p-2 sm:p-3">
+          <div ref={terminalHostRef} className="h-full min-h-0 w-full overflow-hidden rounded-xl bg-[#071014] p-2 sm:p-3" />
         </div>
       </section>
 
-      <footer className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1 pb-1 text-xs text-slate-500">
+      <footer className="shrink-0 flex flex-wrap items-center gap-x-5 gap-y-2 px-1 pb-1 text-xs text-slate-500">
         <span>Ctrl+Shift+C copies the selection.</span>
         <span>Ctrl+Shift+V pastes clipboard content.</span>
         <span>Interactive programs receive a real PTY and resize events.</span>
