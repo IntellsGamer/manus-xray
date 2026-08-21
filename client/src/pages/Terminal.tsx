@@ -6,6 +6,7 @@ import { Clipboard, Copy, CornerDownLeft, Power, RefreshCw, ShieldCheck, Termina
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { resolveTerminalSelection } from "@/lib/terminalClipboard";
 import { didTerminalViewportChange } from "@/lib/terminalSizing";
 import { trpc } from "@/lib/trpc";
 
@@ -34,6 +35,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
   const outputQueuedCharsRef = useRef(0);
   const outputFlushPendingRef = useRef(false);
   const renderingOutputRef = useRef(false);
+  const selectionRef = useRef("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
@@ -45,8 +47,11 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
     return true;
   };
 
-  const copySelection = async () => {
-    const selection = terminalRef.current?.getSelection() || "";
+  const copySelection = async (capturedSelection?: string) => {
+    const selection = resolveTerminalSelection(
+      capturedSelection ?? terminalRef.current?.getSelection() ?? "",
+      selectionRef.current,
+    );
     if (!selection) {
       toast.message("Select terminal text before copying.");
       return;
@@ -137,26 +142,26 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
       lineHeight: 1.25,
       scrollback: 6_000,
       theme: {
-        background: "#071014",
-        foreground: "#d9f6ea",
-        cursor: "#67e8f9",
-        cursorAccent: "#071014",
-        selectionBackground: "#1f5c5c88",
-        black: "#112027",
+        background: "#171717",
+        foreground: "#e5e5e5",
+        cursor: "#f5f5f5",
+        cursorAccent: "#171717",
+        selectionBackground: "#73737388",
+        black: "#262626",
         red: "#fb7185",
-        green: "#86efac",
+        green: "#d4d4d4",
         yellow: "#fde68a",
-        blue: "#7dd3fc",
-        magenta: "#f0abfc",
-        cyan: "#67e8f9",
-        white: "#e2e8f0",
-        brightBlack: "#64748b",
+        blue: "#d4d4d4",
+        magenta: "#d4d4d4",
+        cyan: "#d4d4d4",
+        white: "#e5e5e5",
+        brightBlack: "#737373",
         brightRed: "#fda4af",
-        brightGreen: "#bbf7d0",
+        brightGreen: "#e5e5e5",
         brightYellow: "#fef08a",
-        brightBlue: "#bae6fd",
-        brightMagenta: "#f5d0fe",
-        brightCyan: "#a5f3fc",
+        brightBlue: "#e5e5e5",
+        brightMagenta: "#e5e5e5",
+        brightCyan: "#e5e5e5",
         brightWhite: "#f8fafc",
       },
     });
@@ -181,11 +186,15 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
     const disposeData = terminal.onData(data => {
       if (!renderingOutputRef.current) sendFrame({ type: "input", data });
     });
+    const disposeSelection = terminal.onSelectionChange(() => {
+      selectionRef.current = terminal.getSelection();
+    });
     terminal.attachCustomKeyEventHandler(event => {
       if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) return true;
       if (event.code === "KeyC") {
+        const selection = resolveTerminalSelection(terminal.getSelection(), selectionRef.current);
         event.preventDefault();
-        void copySelection();
+        void copySelection(selection);
         return false;
       }
       if (event.code === "KeyV") {
@@ -200,8 +209,10 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
       resizeObserver.disconnect();
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       disposeData.dispose();
+      disposeSelection.dispose();
       outputQueueRef.current = [];
       outputQueuedCharsRef.current = 0;
+      selectionRef.current = "";
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -282,9 +293,9 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[1700px] flex-col gap-4 overflow-hidden">
-      <header className="shrink-0 flex flex-col gap-3 rounded-2xl border border-cyan-500/20 bg-slate-950/80 px-4 py-4 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <header className="shrink-0 flex flex-col gap-3 rounded-2xl border border-zinc-700/80 bg-zinc-900/95 px-4 py-4 shadow-2xl shadow-black/30 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-200">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-zinc-600 bg-zinc-800 text-zinc-200">
             <TerminalSquare className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -298,10 +309,10 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
         </div>
       </header>
 
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cyan-500/20 bg-[#071014] shadow-2xl shadow-cyan-950/30">
-        <div className="flex flex-col gap-3 border-b border-cyan-400/10 bg-slate-950/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-700/80 bg-[#171717] shadow-2xl shadow-black/35">
+        <div className="flex flex-col gap-3 border-b border-zinc-700/80 bg-zinc-900/95 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,.95)]" />
+            <span className="h-2 w-2 shrink-0 rounded-full bg-zinc-300 shadow-[0_0_12px_rgba(212,212,212,.6)]" />
             <span className="truncate">{sessionId ? `Session ${sessionId.slice(0, 8)}` : lastCloseReason || "Secure interactive shell"}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -319,7 +330,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
             <Button variant="outline" size="sm" className="h-8 border-slate-700 bg-slate-900/70 text-slate-100 hover:bg-slate-800" onClick={() => sendFrame({ type: "input", data: "\u0004" })} disabled={connectionState !== "connected"}>
               <CornerDownLeft className="mr-1.5 h-3.5 w-3.5" /> EOF
             </Button>
-            <Button variant="outline" size="sm" className="h-8 border-cyan-400/30 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20" onClick={reconnect} disabled={connectionState === "checking" || connectionState === "connecting" || connectionState === "blocked"}>
+            <Button variant="outline" size="sm" className="h-8 border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700" onClick={reconnect} disabled={connectionState === "checking" || connectionState === "connecting" || connectionState === "blocked"}>
               <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reconnect
             </Button>
             <Button variant="outline" size="sm" className="h-8 border-rose-400/30 bg-rose-400/10 text-rose-100 hover:bg-rose-400/20" onClick={disconnect} disabled={connectionState !== "connected"}>
@@ -329,7 +340,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
         </div>
 
         <div className="relative min-h-0 flex-1 p-2 sm:p-3">
-          <div ref={terminalHostRef} className="h-full min-h-0 w-full overflow-hidden rounded-xl bg-[#071014] p-2 sm:p-3" />
+          <div ref={terminalHostRef} className="h-full min-h-0 w-full overflow-hidden rounded-xl bg-[#171717] p-2 sm:p-3" />
         </div>
       </section>
 

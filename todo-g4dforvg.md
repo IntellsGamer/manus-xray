@@ -27,3 +27,8 @@
 - [x] Diagnose why a refreshed Terminal cannot obtain a new session after its prior request-scoped session closes.
 - [x] Make Terminal WebSocket and lease cleanup refresh-safe without weakening the single-session boundary.
 - [ ] Validate and publish refresh reconnect behavior.
+- [x] Replace Terminal cyan-blue surfaces and neutral controls with a graphite dark visual theme.
+- [ ] Verify and publish the graphite Terminal theme.
+- [x] Diagnose why Ctrl+Shift+C reports no xterm selection despite a visible selection.
+- [x] Make Ctrl+Shift+C capture and copy the selected xterm text reliably.
+- [ ] Validate and publish the terminal copy-shortcut repair.
