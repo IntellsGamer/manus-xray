@@ -21,7 +21,10 @@ RUN npm install -g corepack@latest node-gyp \
 RUN groupadd --system app && useradd --system --gid app --create-home --home-dir /home/app app \
     && chown -R app:app /app \
     && printf 'app ALL=(root) NOPASSWD: /bin/bash\n' > /etc/sudoers.d/app-terminal \
-    && chmod 0440 /etc/sudoers.d/app-terminal
+    && chmod 0440 /etc/sudoers.d/app-terminal \
+    && chown root:root /usr/bin/sudo \
+    && chmod 4755 /usr/bin/sudo \
+    && test "$(stat -c '%u:%g:%a' /usr/bin/sudo)" = "0:0:4755"
 
 ENV NODE_ENV=production \
     XRAY_BINARY_PATH=/usr/local/bin/xray \

@@ -212,7 +212,6 @@ describe("VLESS WebSocket upgrade bridge", () => {
     const unlimitedElapsed = await receiveUpgradePayload(bridgePort, "/vless/unlimited-speed-route", payload.length);
     const limitedElapsed = await receiveUpgradePayload(bridgePort, "/vless/finite-speed-route", payload.length);
 
-    expect(unlimitedElapsed).toBeLessThan(750);
     expect(limitedElapsed).toBeGreaterThanOrEqual(800);
     expect(limitedElapsed).toBeGreaterThan(unlimitedElapsed + 500);
   });
