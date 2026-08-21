@@ -32,3 +32,7 @@
 - [x] Diagnose why Ctrl+Shift+C reports no xterm selection despite a visible selection.
 - [x] Make Ctrl+Shift+C capture and copy the selected xterm text reliably.
 - [ ] Validate and publish the terminal copy-shortcut repair.
+- [x] Restore actual but subtly muted ANSI colors within the graphite Terminal shell.
+- [ ] Verify and publish the colored graphite terminal palette.
+- [x] Add a readable light-mode presentation for the Terminal page and its xterm surface.
+- [ ] Verify and publish Terminal behavior in both light and graphite-dark themes.

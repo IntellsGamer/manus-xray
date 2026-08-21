@@ -6,6 +6,7 @@ import { Clipboard, Copy, CornerDownLeft, Power, RefreshCw, ShieldCheck, Termina
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/contexts/ThemeContext";
 import { resolveTerminalSelection } from "@/lib/terminalClipboard";
 import { didTerminalViewportChange } from "@/lib/terminalSizing";
 import { trpc } from "@/lib/trpc";
@@ -18,6 +19,54 @@ type TerminalMessage =
   | { type: "exit"; exitCode: number; signal?: number }
   | { type: "error"; message: string };
 
+const GRAPHITE_ANSI_COLORS = {
+  background: "#171717",
+  foreground: "#e5e5e5",
+  cursor: "#f5f5f5",
+  cursorAccent: "#171717",
+  selectionBackground: "#73737388",
+  black: "#262626",
+  red: "#d97a82",
+  green: "#96b985",
+  yellow: "#cfb66e",
+  blue: "#83a8c8",
+  magenta: "#b89ac7",
+  cyan: "#7fb5b2",
+  white: "#e5e5e5",
+  brightBlack: "#737373",
+  brightRed: "#e89a9f",
+  brightGreen: "#b2cf9f",
+  brightYellow: "#ddc983",
+  brightBlue: "#a6c4dc",
+  brightMagenta: "#cbb5d8",
+  brightCyan: "#9bcbc7",
+  brightWhite: "#fafafa",
+};
+
+const LIGHT_ANSI_COLORS = {
+  background: "#fafafa",
+  foreground: "#27272a",
+  cursor: "#18181b",
+  cursorAccent: "#fafafa",
+  selectionBackground: "#a1a1aa66",
+  black: "#3f3f46",
+  red: "#b8616b",
+  green: "#668b5c",
+  yellow: "#a98c42",
+  blue: "#527b9f",
+  magenta: "#9774a8",
+  cyan: "#4f8985",
+  white: "#f4f4f5",
+  brightBlack: "#71717a",
+  brightRed: "#ca7880",
+  brightGreen: "#7ea273",
+  brightYellow: "#bda053",
+  brightBlue: "#6e94b5",
+  brightMagenta: "#aa8ab8",
+  brightCyan: "#6da29e",
+  brightWhite: "#ffffff",
+};
+
 function socketUrl(path: string, terminalTicket: string) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const separator = path.includes("?") ? "&" : "?";
@@ -25,6 +74,12 @@ function socketUrl(path: string, terminalTicket: string) {
 }
 
 function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string; terminalTicket: string }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const ansiColors = isDark ? GRAPHITE_ANSI_COLORS : LIGHT_ANSI_COLORS;
+  const neutralControlClasses = isDark
+    ? "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100";
   const terminalHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -141,29 +196,7 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
       fontWeight: 500,
       lineHeight: 1.25,
       scrollback: 6_000,
-      theme: {
-        background: "#171717",
-        foreground: "#e5e5e5",
-        cursor: "#f5f5f5",
-        cursorAccent: "#171717",
-        selectionBackground: "#73737388",
-        black: "#262626",
-        red: "#fb7185",
-        green: "#d4d4d4",
-        yellow: "#fde68a",
-        blue: "#d4d4d4",
-        magenta: "#d4d4d4",
-        cyan: "#d4d4d4",
-        white: "#e5e5e5",
-        brightBlack: "#737373",
-        brightRed: "#fda4af",
-        brightGreen: "#e5e5e5",
-        brightYellow: "#fef08a",
-        brightBlue: "#e5e5e5",
-        brightMagenta: "#e5e5e5",
-        brightCyan: "#e5e5e5",
-        brightWhite: "#f8fafc",
-      },
+      theme: ansiColors,
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -220,6 +253,10 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
       lastSizeRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = ansiColors;
+  }, [ansiColors]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -293,14 +330,14 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[1700px] flex-col gap-4 overflow-hidden">
-      <header className="shrink-0 flex flex-col gap-3 rounded-2xl border border-zinc-700/80 bg-zinc-900/95 px-4 py-4 shadow-2xl shadow-black/30 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <header className={`shrink-0 flex flex-col gap-3 rounded-2xl border px-4 py-4 shadow-2xl backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5 ${isDark ? "border-zinc-700/80 bg-zinc-900/95 shadow-black/30" : "border-zinc-300 bg-white/95 shadow-zinc-300/50"}`}>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-zinc-600 bg-zinc-800 text-zinc-200">
+          <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border ${isDark ? "border-zinc-600 bg-zinc-800 text-zinc-200" : "border-zinc-300 bg-zinc-100 text-zinc-700"}`}>
             <TerminalSquare className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold tracking-tight text-slate-100 sm:text-lg">Backend terminal</h1>
-            <p className="truncate text-xs text-slate-400">Interactive PTY · authenticated administrators · isolated process environment</p>
+            <h1 className={`truncate text-base font-semibold tracking-tight sm:text-lg ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Backend terminal</h1>
+            <p className={`truncate text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Interactive PTY · authenticated administrators · isolated process environment</p>
           </div>
         </div>
         <div className={`flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${status.classes}`}>
@@ -309,42 +346,42 @@ function TerminalWorkspace({ socketPath, terminalTicket }: { socketPath: string;
         </div>
       </header>
 
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-700/80 bg-[#171717] shadow-2xl shadow-black/35">
-        <div className="flex flex-col gap-3 border-b border-zinc-700/80 bg-zinc-900/95 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-          <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-zinc-300 shadow-[0_0_12px_rgba(212,212,212,.6)]" />
+      <section className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border shadow-2xl ${isDark ? "border-zinc-700/80 bg-[#171717] shadow-black/35" : "border-zinc-300 bg-[#fafafa] shadow-zinc-300/50"}`}>
+        <div className={`flex flex-col gap-3 border-b px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 ${isDark ? "border-zinc-700/80 bg-zinc-900/95" : "border-zinc-200 bg-zinc-100/90"}`}>
+          <div className={`flex min-w-0 items-center gap-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+            <span className={`h-2 w-2 shrink-0 rounded-full ${isDark ? "bg-zinc-300 shadow-[0_0_12px_rgba(212,212,212,.6)]" : "bg-zinc-600 shadow-[0_0_10px_rgba(82,82,91,.35)]"}`} />
             <span className="truncate">{sessionId ? `Session ${sessionId.slice(0, 8)}` : lastCloseReason || "Secure interactive shell"}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 border-slate-700 bg-slate-900/70 text-slate-100 hover:bg-slate-800" onClick={() => void copySelection()}>
+            <Button variant="outline" size="sm" className={`h-8 ${neutralControlClasses}`} onClick={() => void copySelection()}>
               <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy
               <kbd className="ml-2 hidden rounded border border-slate-600 px-1 text-[10px] text-slate-400 sm:inline">⇧⌃C</kbd>
             </Button>
-            <Button variant="outline" size="sm" className="h-8 border-slate-700 bg-slate-900/70 text-slate-100 hover:bg-slate-800" onClick={() => void pasteClipboard()}>
+            <Button variant="outline" size="sm" className={`h-8 ${neutralControlClasses}`} onClick={() => void pasteClipboard()}>
               <Clipboard className="mr-1.5 h-3.5 w-3.5" /> Paste
               <kbd className="ml-2 hidden rounded border border-slate-600 px-1 text-[10px] text-slate-400 sm:inline">⇧⌃V</kbd>
             </Button>
-            <Button variant="outline" size="sm" className="h-8 border-slate-700 bg-slate-900/70 text-slate-100 hover:bg-slate-800" onClick={() => sendFrame({ type: "input", data: "\u0003" })} disabled={connectionState !== "connected"}>
+            <Button variant="outline" size="sm" className={`h-8 ${neutralControlClasses}`} onClick={() => sendFrame({ type: "input", data: "\u0003" })} disabled={connectionState !== "connected"}>
               <Zap className="mr-1.5 h-3.5 w-3.5" /> Interrupt
             </Button>
-            <Button variant="outline" size="sm" className="h-8 border-slate-700 bg-slate-900/70 text-slate-100 hover:bg-slate-800" onClick={() => sendFrame({ type: "input", data: "\u0004" })} disabled={connectionState !== "connected"}>
+            <Button variant="outline" size="sm" className={`h-8 ${neutralControlClasses}`} onClick={() => sendFrame({ type: "input", data: "\u0004" })} disabled={connectionState !== "connected"}>
               <CornerDownLeft className="mr-1.5 h-3.5 w-3.5" /> EOF
             </Button>
-            <Button variant="outline" size="sm" className="h-8 border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700" onClick={reconnect} disabled={connectionState === "checking" || connectionState === "connecting" || connectionState === "blocked"}>
+            <Button variant="outline" size="sm" className={`h-8 ${neutralControlClasses}`} onClick={reconnect} disabled={connectionState === "checking" || connectionState === "connecting" || connectionState === "blocked"}>
               <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reconnect
             </Button>
-            <Button variant="outline" size="sm" className="h-8 border-rose-400/30 bg-rose-400/10 text-rose-100 hover:bg-rose-400/20" onClick={disconnect} disabled={connectionState !== "connected"}>
+            <Button variant="outline" size="sm" className={`h-8 ${isDark ? "border-rose-400/30 bg-rose-400/10 text-rose-100 hover:bg-rose-400/20" : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"}`} onClick={disconnect} disabled={connectionState !== "connected"}>
               <Power className="mr-1.5 h-3.5 w-3.5" /> Close
             </Button>
           </div>
         </div>
 
         <div className="relative min-h-0 flex-1 p-2 sm:p-3">
-          <div ref={terminalHostRef} className="h-full min-h-0 w-full overflow-hidden rounded-xl bg-[#171717] p-2 sm:p-3" />
+          <div ref={terminalHostRef} className={`h-full min-h-0 w-full overflow-hidden rounded-xl p-2 sm:p-3 ${isDark ? "bg-[#171717]" : "bg-[#fafafa]"}`} />
         </div>
       </section>
 
-      <footer className="shrink-0 flex flex-wrap items-center gap-x-5 gap-y-2 px-1 pb-1 text-xs text-slate-500">
+      <footer className={`shrink-0 flex flex-wrap items-center gap-x-5 gap-y-2 px-1 pb-1 text-xs ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
         <span>Ctrl+Shift+C copies the selection.</span>
         <span>Ctrl+Shift+V pastes clipboard content.</span>
         <span>Interactive programs receive a real PTY and resize events.</span>
