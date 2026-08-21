@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "http";
-import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalAdministrator, isTerminalOriginAllowed, parseTerminalFrame, terminalShellLaunch, TerminalInputLimiter, TerminalOutputLimiter } from "./terminal";
+import { createTerminalLeaseCoordinator, createTerminalSessionFinalizer, isTerminalAdministrator, isTerminalOriginAllowed, parseTerminalFrame, TerminalInputLimiter, TerminalOutputLimiter } from "./terminal";
+import { parseRootTerminalBrokerFrame, ROOT_TERMINAL_SOCKET_PATH } from "./rootTerminalBroker";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -70,15 +71,11 @@ describe("terminal authorization boundary", () => {
 });
 
 describe("terminal execution context", () => {
-  it("keeps the application user while starting the PTY through the root-only launch path", () => {
-    expect(terminalShellLaunch(false)).toEqual({
-      command: "/bin/bash",
-      args: ["--noprofile", "--norc", "-i"],
-    });
-    expect(terminalShellLaunch(true)).toEqual({
-      command: "sudo",
-      args: ["-n", "-H", "/bin/bash", "--noprofile", "--norc", "-i"],
-    });
+  it("accepts only the fixed local root-broker protocol rather than a caller-supplied command", () => {
+    expect(ROOT_TERMINAL_SOCKET_PATH).toBe("/tmp/nginx-vless-root-terminal.sock");
+    expect(parseRootTerminalBrokerFrame(JSON.stringify({ type: "ready" }))).toEqual({ type: "ready" });
+    expect(parseRootTerminalBrokerFrame(JSON.stringify({ type: "output", data: "# " }))).toEqual({ type: "output", data: "# " });
+    expect(parseRootTerminalBrokerFrame(JSON.stringify({ type: "start", command: "/bin/bash" }))).toBeNull();
   });
 });
 

@@ -12,4 +12,10 @@
 - [x] Defer live verification of the app-user/root-PTY split until the user reports the published outcome.
 - [x] Mark the root-terminal publication task complete at the user’s request; the user will report the result later.
 - [x] Restore root ownership and setuid permissions to sudo in the production image.
-- [ ] Validate and publish the repaired root-terminal launch.
+- [x] Validate and publish the repaired root-terminal launch.
+- [x] Replace the runtime-stripped sudo elevation path with a root-owned terminal broker while keeping the web application under app.
+- [x] Validate the root broker protocol, focused terminal behavior, TypeScript, and production build.
+- [ ] Publish the brokered root-terminal repair and wait for the user's live verification.
+- [x] Exercise the production entrypoint locally to confirm a root broker, an app-user web process, and app-group socket access.
+- [x] Exercise the server-to-broker terminal transport under the production entrypoint before publication.
+- [ ] Confirm the published authenticated WebSocket terminal path reaches the root broker and returns `id -u` as `0`.

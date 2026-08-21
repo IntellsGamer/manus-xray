@@ -1,12 +1,11 @@
 import { randomUUID } from "crypto";
 import type { IncomingMessage, Server } from "http";
 import { isIP } from "net";
-import { resolve } from "path";
 import type { Duplex } from "stream";
-import * as pty from "node-pty";
 import { WebSocketServer, type WebSocket } from "ws";
 import { acquireTerminalLease, releaseTerminalLease } from "./db";
 import { sdk, type AuthenticatedUser } from "./_core/sdk";
+import { connectRootTerminalBroker, type RootTerminalBrokerSession } from "./rootTerminalBroker";
 
 export const TERMINAL_SOCKET_PATH = "/api/terminal/socket";
 
@@ -156,32 +155,6 @@ export function parseTerminalFrame(raw: WebSocket.RawData): TerminalFrame | null
   return null;
 }
 
-function terminalEnvironment() {
-  const safeHome = process.env.HOME || "/tmp";
-  return {
-    TERM: "xterm-256color",
-    COLORTERM: "truecolor",
-    LANG: "C.UTF-8",
-    LC_ALL: "C.UTF-8",
-    PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-    HOME: safeHome,
-    SHELL: "/bin/bash",
-    HISTFILE: "/dev/null",
-    PS1: "\\[\\e[38;5;81m\\]backend\\[\\e[0m\\] \\[\\e[38;5;114m\\]\\w\\[\\e[0m\\] $ ",
-  };
-}
-
-function shellWorkingDirectory() {
-  const configured = process.env.TERMINAL_CWD;
-  return configured ? resolve(configured) : process.cwd();
-}
-
-export function terminalShellLaunch(runAsRoot = process.env.TERMINAL_AS_ROOT === "true") {
-  const bashArguments = ["--noprofile", "--norc", "-i"];
-  if (!runAsRoot) return { command: "/bin/bash", args: bashArguments };
-  return { command: "sudo", args: ["-n", "-H", "/bin/bash", ...bashArguments] };
-}
-
 function send(socket: WebSocket, frame: TerminalOutputFrame) {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame));
 }
@@ -195,15 +168,17 @@ const terminalSockets = new Set<WebSocket>();
 const terminalWss = new WebSocketServer({ noServer: true, clientTracking: false, maxPayload: MAX_FRAME_BYTES });
 const terminalInstanceId = randomUUID();
 
-function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
+async function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
   const sessionId = randomUUID();
   const inputLimiter = new TerminalInputLimiter();
   const outputLimiter = new TerminalOutputLimiter();
   let closed = false;
   let lastActivityAt = Date.now();
-  let ptyProcess: pty.IPty;
+  let rootTerminal: RootTerminalBrokerSession | undefined;
   let queuedOutput = "";
   let outputFlushTimer: NodeJS.Timeout | undefined;
+  let idleTimer: NodeJS.Timeout | undefined;
+  let maxAgeTimer: NodeJS.Timeout | undefined;
   const flushOutput = () => {
     outputFlushTimer = undefined;
     if (closed || !queuedOutput) return;
@@ -215,9 +190,9 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
     releaseLease,
     endProcess: () => {
       try {
-        ptyProcess.kill("SIGHUP");
+        rootTerminal?.close();
       } catch {
-        // The process may have already exited.
+        // The broker may have already ended the PTY.
       }
     },
   });
@@ -227,21 +202,45 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
     closed = true;
     terminalSockets.delete(socket);
     void finalizeSession().catch(() => undefined);
-    clearInterval(idleTimer);
-    clearTimeout(maxAgeTimer);
+    if (idleTimer) clearInterval(idleTimer);
+    if (maxAgeTimer) clearTimeout(maxAgeTimer);
     if (outputFlushTimer) clearTimeout(outputFlushTimer);
     if (socket.readyState === socket.OPEN || socket.readyState === socket.CLOSING) socket.close(code, reason);
   };
 
   try {
-    const shell = terminalShellLaunch();
-    ptyProcess = pty.spawn(shell.command, shell.args, {
-      name: "xterm-256color",
-      cols: 120,
-      rows: 34,
-      cwd: shellWorkingDirectory(),
-      env: terminalEnvironment(),
+    rootTerminal = await connectRootTerminalBroker({
+      onFrame: frame => {
+        if (frame.type === "output") {
+          const bytes = Buffer.byteLength(frame.data, "utf8");
+          if (!outputLimiter.accept(bytes) || socket.bufferedAmount + Buffer.byteLength(queuedOutput, "utf8") + bytes > MAX_SOCKET_BUFFERED_OUTPUT_BYTES) {
+            shutdown(1008, "Terminal output limit exceeded");
+            return;
+          }
+          queuedOutput += frame.data;
+          if (!outputFlushTimer) outputFlushTimer = setTimeout(flushOutput, 16);
+          return;
+        }
+        if (frame.type === "exit") {
+          flushOutput();
+          send(socket, { type: "exit", exitCode: frame.exitCode, signal: frame.signal });
+          shutdown(1000, "Terminal process exited");
+          return;
+        }
+        if (frame.type === "error") {
+          send(socket, { type: "error", message: frame.message });
+          shutdown(1011, "Root terminal broker error");
+          return;
+        }
+        if (frame.type === "ready") send(socket, { type: "ready", sessionId });
+      },
+      onError: () => shutdown(1011, "Root terminal broker unavailable"),
     });
+    if (closed) {
+      rootTerminal.close();
+      return;
+    }
+    rootTerminal.start(120, 34);
   } catch {
     terminalSockets.delete(socket);
     void releaseLease().catch(() => undefined);
@@ -250,25 +249,10 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
     return;
   }
 
-  const idleTimer = setInterval(() => {
+  idleTimer = setInterval(() => {
     if (Date.now() - lastActivityAt >= MAX_IDLE_MS) shutdown(1000, "Idle terminal session expired");
   }, 30_000);
-  const maxAgeTimer = setTimeout(() => shutdown(1000, "Terminal session expired"), MAX_SESSION_MS);
-
-  ptyProcess.onData(data => {
-    const bytes = Buffer.byteLength(data, "utf8");
-    if (!outputLimiter.accept(bytes) || socket.bufferedAmount + Buffer.byteLength(queuedOutput, "utf8") + bytes > MAX_SOCKET_BUFFERED_OUTPUT_BYTES) {
-      shutdown(1008, "Terminal output limit exceeded");
-      return;
-    }
-    queuedOutput += data;
-    if (!outputFlushTimer) outputFlushTimer = setTimeout(flushOutput, 16);
-  });
-  ptyProcess.onExit(({ exitCode, signal }) => {
-    flushOutput();
-    send(socket, { type: "exit", exitCode, signal });
-    shutdown(1000, "Terminal process exited");
-  });
+  maxAgeTimer = setTimeout(() => shutdown(1000, "Terminal session expired"), MAX_SESSION_MS);
 
   socket.on("message", raw => {
     if (closed) return;
@@ -286,7 +270,7 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
         return;
       }
       try {
-        ptyProcess.write(frame.data);
+        rootTerminal.write(frame.data);
       } catch {
         shutdown(1011, "Terminal process is no longer available");
       }
@@ -296,7 +280,7 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
       const cols = Math.max(2, Math.min(MAX_COLS, Math.floor(frame.cols)));
       const rows = Math.max(1, Math.min(MAX_ROWS, Math.floor(frame.rows)));
       try {
-        ptyProcess.resize(cols, rows);
+        rootTerminal.resize(cols, rows);
       } catch {
         shutdown(1000, "Terminal process exited before resize completed");
       }
@@ -305,7 +289,6 @@ function startTerminal(socket: WebSocket, releaseLease: () => Promise<void>) {
   socket.once("close", () => shutdown());
   socket.once("error", () => shutdown(1011, "Terminal transport error"));
 
-  send(socket, { type: "ready", sessionId });
 }
 
 async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
@@ -360,7 +343,7 @@ async function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head:
   terminalWss.handleUpgrade(req, socket, head, websocket => {
     terminalSockets.add(websocket);
     console.info(`[Terminal] Session opened for administrator from ${trustedClientIp(req)}.`);
-    startTerminal(websocket, lease.release);
+    void startTerminal(websocket, lease.release);
   });
 }
 
